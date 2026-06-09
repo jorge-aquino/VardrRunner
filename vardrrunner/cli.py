@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 
 from vardrrunner.commands import auth, imports, jobs, programs, run
+from vardrrunner.commands import status as status_cmd
 
 console = Console()
 app = typer.Typer(
@@ -26,6 +27,12 @@ app = typer.Typer(
 login_app = typer.Typer(help="Log in to a Vardr product.", no_args_is_help=True)
 app.add_typer(login_app, name="login")
 login_app.command("vardrmap")(auth.login_vardrmap)
+
+
+@app.command()
+def status():
+    """Show config, API connectivity, and local tool availability."""
+    status_cmd.run_status()
 
 
 @app.command()
