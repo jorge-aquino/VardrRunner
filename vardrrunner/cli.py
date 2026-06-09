@@ -10,7 +10,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from vardrrunner.commands import auth, imports, programs, run
+from vardrrunner.commands import auth, imports, jobs, programs, run
 
 console = Console()
 app = typer.Typer(
@@ -93,6 +93,32 @@ def import_ffuf(
 # Run
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Jobs
+# --------------------------------------------------------------------------- #
+
+jobs_app = typer.Typer(help="Manage and execute scan job queue.", no_args_is_help=True)
+app.add_typer(jobs_app, name="jobs")
+
+
+@jobs_app.command("list")
+def jobs_list():
+    """List pending scan jobs."""
+    jobs.list_jobs()
+
+
+@jobs_app.command("run")
+def jobs_run(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompts"),
+):
+    """Claim and execute all pending scan jobs."""
+    jobs.run_jobs(yes=yes)
+
+
+# --------------------------------------------------------------------------- #
+# Run
+# --------------------------------------------------------------------------- #
+
 run_app = typer.Typer(help="Run a tool locally and upload results to VardrMap.", no_args_is_help=True)
 app.add_typer(run_app, name="run")
 
@@ -119,6 +145,15 @@ def run_httpx(
         status_code=status_code,
         yes=yes,
     )
+
+
+@run_app.command("subfinder")
+def run_subfinder(
+    program_id: str  = typer.Option(..., "--program", "-p",  help="Program UUID"),
+    yes:        bool = typer.Option(False, "--yes",   "-y",  help="Skip confirmation prompt"),
+):
+    """Run subfinder against wildcard scope entries and import discovered hosts."""
+    run.run_subfinder(program_id=program_id, yes=yes)
 
 
 @run_app.command("nuclei")

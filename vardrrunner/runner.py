@@ -11,8 +11,9 @@ from typing import Optional
 # Allowlist maps subcommand names to their executable names.
 # Add new tools here only — never allow arbitrary executables.
 ALLOWED_TOOLS = {
-    "httpx":   "httpx",
-    "nuclei":  "nuclei",
+    "httpx":     "httpx",
+    "nuclei":    "nuclei",
+    "subfinder": "subfinder",
 }
 
 
@@ -73,4 +74,21 @@ def run_nuclei(
 
     result = subprocess.run(cmd, check=False)
     Path(targets_file).unlink(missing_ok=True)
+    return result.returncode
+
+
+def run_subfinder(domains: list[str], output_path: Path) -> int:
+    """Run subfinder against a list of root domains. Output is one host per line."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+        tmp.write("\n".join(domains))
+        domains_file = tmp.name
+
+    cmd = [
+        ALLOWED_TOOLS["subfinder"],
+        "-dL", domains_file,
+        "-o",  str(output_path),
+        "-silent",
+    ]
+    result = subprocess.run(cmd, check=False)
+    Path(domains_file).unlink(missing_ok=True)
     return result.returncode

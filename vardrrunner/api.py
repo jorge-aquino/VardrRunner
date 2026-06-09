@@ -52,3 +52,27 @@ class VardrMapClient:
                 files={"file": (file_path, fh, "application/json")},
                 data={"tool_type": tool_type},
             )
+
+    # ------------------------------------------------------------------
+    # Scan jobs (job queue for UI-initiated scans)
+    # ------------------------------------------------------------------
+
+    def pending_jobs(self) -> list[dict]:
+        """Return all pending jobs owned by the authenticated user."""
+        return self.get("/jobs/pending").get("jobs", [])
+
+    def claim_job(self, job_id: str) -> dict:
+        """Mark a job as running (claim it before executing)."""
+        return self.patch(f"/jobs/{job_id}", json={"status": "running"})
+
+    def complete_job(self, job_id: str, status: str, error: str = "") -> dict:
+        """Mark a job done or failed."""
+        payload: dict = {"status": status}
+        if error:
+            payload["error_message"] = error
+        return self.patch(f"/jobs/{job_id}", json=payload)
+
+    def patch(self, path: str, json: Optional[dict] = None) -> Any:
+        r = self.session.patch(self._url(path), json=json, timeout=30)
+        r.raise_for_status()
+        return r.json()
