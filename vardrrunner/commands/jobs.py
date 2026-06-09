@@ -71,7 +71,8 @@ def run_jobs(yes: bool = False) -> None:
 
         # Validate tool is installed before claiming
         if not runner.tool_available(tool_type):
-            console.print(f"[red]'{tool_type}' not found on PATH — skipping job.[/red]")
+            console.print(f"[red]'{tool_type}' not found on PATH — marking job failed.[/red]")
+            client.complete_job(job_id, "failed", error=f"'{tool_type}' not found on PATH")
             continue
 
         # Resolve targets

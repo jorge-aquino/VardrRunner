@@ -189,7 +189,7 @@ def test_run_jobs_no_jobs_exits():
         jobs_cmd.run_jobs(yes=True)
 
 
-def test_run_jobs_missing_tool_skips_job():
+def test_run_jobs_missing_tool_marks_failed():
     job = {
         "id": "job-002", "program_id": "prog-1",
         "tool_type": "nuclei", "target_source": "scope",
@@ -204,4 +204,4 @@ def test_run_jobs_missing_tool_skips_job():
         jobs_cmd.run_jobs(yes=True)
 
     client.claim_job.assert_not_called()
-    client.complete_job.assert_not_called()
+    client.complete_job.assert_called_once_with("job-002", "failed", error="'nuclei' not found on PATH")
