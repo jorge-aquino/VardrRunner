@@ -76,3 +76,11 @@ class VardrMapClient:
         r = self.session.patch(self._url(path), json=json, timeout=30)
         r.raise_for_status()
         return r.json()
+
+    # ------------------------------------------------------------------
+    # Runner heartbeat
+    # ------------------------------------------------------------------
+
+    def send_heartbeat(self, payload: dict) -> dict:
+        """Post runner status (hostname, version, os, tools) to the backend."""
+        return self.post("/runner/heartbeat", json=payload)

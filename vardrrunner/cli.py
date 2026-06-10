@@ -10,7 +10,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from vardrrunner.commands import auth, imports, jobs, programs, run
+from vardrrunner.commands import auth, heartbeat as heartbeat_cmd, imports, jobs, programs, run
 from vardrrunner.commands import status as status_cmd
 
 console = Console()
@@ -33,6 +33,12 @@ login_app.command("vardrmap")(auth.login_vardrmap)
 def status():
     """Show config, API connectivity, and local tool availability."""
     status_cmd.run_status()
+
+
+@app.command()
+def heartbeat():
+    """Send a heartbeat to VardrMap — reports hostname, version, and tool status."""
+    heartbeat_cmd.send_heartbeat(quiet=False)
 
 
 @app.command()

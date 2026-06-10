@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from vardrrunner import api, config, runner
+from vardrrunner.commands.heartbeat import send_heartbeat
 from vardrrunner.commands.run import _confirm, _is_wildcard, _make_run_dir, _resolve_targets
 
 console = Console()
@@ -51,6 +52,9 @@ def list_jobs() -> None:
 
 def run_jobs(yes: bool = False) -> None:
     """Claim and execute all pending jobs for the authenticated user."""
+    # Report runner status so the Bridge shows this machine as online
+    send_heartbeat(quiet=True)
+
     url, key = config.require_auth()
     client = api.VardrMapClient(url, key)
     jobs = client.pending_jobs()

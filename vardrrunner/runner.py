@@ -2,6 +2,7 @@
 Safe subprocess runner. Only tools in ALLOWED_TOOLS can be executed.
 Commands are built as argument lists — shell=True is never used.
 """
+import re
 import shutil
 import subprocess
 import tempfile
@@ -20,6 +21,22 @@ ALLOWED_TOOLS = {
 def tool_available(name: str) -> bool:
     """Return True if the tool binary exists on PATH."""
     return shutil.which(ALLOWED_TOOLS.get(name, "")) is not None
+
+
+def tool_version(name: str) -> Optional[str]:
+    """Return the version string (e.g. 'v1.6.9') for an installed tool, or None."""
+    binary = ALLOWED_TOOLS.get(name, "")
+    if not binary or not shutil.which(binary):
+        return None
+    try:
+        result = subprocess.run(
+            [binary, "-version"], capture_output=True, text=True, timeout=5, check=False
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        match = re.search(r"v\d+\.\d+\.\d+", output)
+        return match.group(0) if match else "unknown"
+    except Exception:
+        return None
 
 
 def check_tool(name: str) -> None:
