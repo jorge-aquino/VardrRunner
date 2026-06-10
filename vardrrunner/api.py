@@ -84,3 +84,11 @@ class VardrMapClient:
     def send_heartbeat(self, payload: dict) -> dict:
         """Post runner status (hostname, version, os, tools) to the backend."""
         return self.post("/runner/heartbeat", json=payload)
+
+    # ------------------------------------------------------------------
+    # Job events
+    # ------------------------------------------------------------------
+
+    def post_event(self, job_id: str, kind: str, text: str = "") -> dict:
+        """Post a lifecycle event for a job (started, running, done, failed, …)."""
+        return self.post(f"/jobs/{job_id}/events", json={"kind": kind, "text": text})

@@ -50,6 +50,14 @@ def list_jobs() -> None:
     console.print(table)
 
 
+def _emit(client: api.VardrMapClient, job_id: str, kind: str, text: str = "") -> None:
+    """Post a job event; swallow errors so a failed event never kills the job loop."""
+    try:
+        client.post_event(job_id, kind, text)
+    except Exception:
+        pass
+
+
 def run_jobs(yes: bool = False) -> None:
     """Claim and execute all pending jobs for the authenticated user."""
     # Report runner status so the Bridge shows this machine as online
@@ -77,7 +85,9 @@ def run_jobs(yes: bool = False) -> None:
         # Validate tool is installed before claiming
         if not runner.tool_available(tool_type):
             console.print(f"[red]'{tool_type}' not found on PATH — marking job failed.[/red]")
-            client.complete_job(job_id, "failed", error=f"'{tool_type}' not found on PATH")
+            error = f"'{tool_type}' not found on PATH"
+            client.complete_job(job_id, "failed", error=error)
+            _emit(client, job_id, "failed", error)
             continue
 
         # ── subfinder: wildcard domain resolution + plain-text → JSONL upload ──
@@ -92,12 +102,15 @@ def run_jobs(yes: bool = False) -> None:
                         if stripped:
                             domains.append(stripped)
             except Exception:
-                client.complete_job(job_id, "failed", error="Failed to resolve scope")
+                error = "Failed to resolve scope"
+                client.complete_job(job_id, "failed", error=error)
+                _emit(client, job_id, "failed", error)
                 continue
 
             if not domains:
                 console.print("[yellow]No wildcard scope entries — marking job as done.[/yellow]")
                 client.complete_job(job_id, "done")
+                _emit(client, job_id, "done", "no wildcard scope entries")
                 continue
 
             _confirm(domains, tool_type, yes)
@@ -108,9 +121,13 @@ def run_jobs(yes: bool = False) -> None:
                 console.print(f"[red]Could not claim job:[/red] {e}")
                 continue
 
+            _emit(client, job_id, "started", f"claimed job · {len(domains)} domain(s) to enumerate")
+            _emit(client, job_id, "targets_resolved", f"{len(domains)} wildcard domain(s) from scope")
+
             run_dir   = _make_run_dir()
             sf_output = run_dir / "subfinder.txt"
             console.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
+            _emit(client, job_id, "running", f"running subfinder on {len(domains)} domain(s)")
             rc = runner.run_subfinder(domains, sf_output)
             if rc != 0:
                 console.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
@@ -118,6 +135,7 @@ def run_jobs(yes: bool = False) -> None:
             if not sf_output.exists() or sf_output.stat().st_size == 0:
                 console.print("[yellow]No subdomains discovered.[/yellow]")
                 client.complete_job(job_id, "done")
+                _emit(client, job_id, "done", "subfinder found no subdomains")
                 continue
 
             hosts = [ln.strip() for ln in sf_output.read_text().splitlines() if ln.strip()]
@@ -133,11 +151,14 @@ def run_jobs(yes: bool = False) -> None:
                 result = client.import_file(program_id, "httpx", str(jsonl_path))
                 count  = result.get("import_record", {}).get("imported_count", "?")
                 console.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
+                _emit(client, job_id, "uploaded", f"imported {count} subdomain(s) as recon targets")
                 client.complete_job(job_id, "done")
+                _emit(client, job_id, "done")
             except Exception as e:
                 error_msg = str(e)
                 console.print(f"[red]Upload failed:[/red] {error_msg}")
                 client.complete_job(job_id, "failed", error=error_msg[:500])
+                _emit(client, job_id, "failed", error_msg[:500])
             continue
 
         # ── httpx / nuclei: shared target resolution ────────────────────────────
@@ -155,12 +176,15 @@ def run_jobs(yes: bool = False) -> None:
                 limit=limit,
             )
         except SystemExit:
-            client.complete_job(job_id, "failed", error="Failed to resolve targets")
+            error = "Failed to resolve targets"
+            client.complete_job(job_id, "failed", error=error)
+            _emit(client, job_id, "failed", error)
             continue
 
         if not targets:
             console.print("[yellow]No targets resolved — marking job as done.[/yellow]")
             client.complete_job(job_id, "done")
+            _emit(client, job_id, "done", "no targets resolved")
             continue
 
         _confirm(targets, tool_type, yes)
@@ -172,12 +196,16 @@ def run_jobs(yes: bool = False) -> None:
             console.print(f"[red]Could not claim job:[/red] {e}")
             continue
 
+        _emit(client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}")
+        _emit(client, job_id, "targets_resolved", f"{len(targets)} target(s) from {target_src}")
+
         run_dir = _make_run_dir()
         error_msg = ""
         try:
             if tool_type == "httpx":
                 output = run_dir / "httpx.jsonl"
                 console.print(f"Running httpx… output → [dim]{output}[/dim]")
+                _emit(client, job_id, "running", f"running httpx against {len(targets)} target(s)")
                 rc = runner.run_httpx(targets, output)
             else:  # nuclei
                 output = run_dir / "nuclei.jsonl"
@@ -185,6 +213,7 @@ def run_jobs(yes: bool = False) -> None:
                 templates = ",".join(cfg["templates"]) if cfg.get("templates") else None
                 label = f"severity={severity}" if severity else "all"
                 console.print(f"Running nuclei ({label})… output → [dim]{output}[/dim]")
+                _emit(client, job_id, "running", f"running nuclei ({label}) against {len(targets)} target(s)")
                 rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
 
             if rc != 0:
@@ -193,15 +222,19 @@ def run_jobs(yes: bool = False) -> None:
             if not output.exists() or output.stat().st_size == 0:
                 console.print("[yellow]No output produced — nothing to import.[/yellow]")
                 client.complete_job(job_id, "done")
+                _emit(client, job_id, "done", f"{tool_type} produced no output")
                 continue
 
             console.print("Uploading results…")
             result = client.import_file(program_id, tool_type, str(output))
             count  = result.get("import_record", {}).get("imported_count", "?")
             console.print(f"[green]Done.[/green] Imported {count} result(s).")
+            _emit(client, job_id, "uploaded", f"imported {count} result(s)")
             client.complete_job(job_id, "done")
+            _emit(client, job_id, "done")
 
         except Exception as e:
             error_msg = str(e)
             console.print(f"[red]Job failed:[/red] {error_msg}")
             client.complete_job(job_id, "failed", error=error_msg[:500])
+            _emit(client, job_id, "failed", error_msg[:500])
