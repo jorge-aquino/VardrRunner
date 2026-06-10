@@ -5,6 +5,7 @@ The UI creates job records; VardrRunner polls /jobs/pending, executes
 the tool locally, and uploads results via the existing import endpoint.
 """
 import datetime
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -13,7 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from vardrrunner import api, config, runner
-from vardrrunner.commands.run import _confirm, _make_run_dir, _resolve_targets
+from vardrrunner.commands.run import _confirm, _is_wildcard, _make_run_dir, _resolve_targets
 
 console = Console()
 
@@ -75,7 +76,67 @@ def run_jobs(yes: bool = False) -> None:
             client.complete_job(job_id, "failed", error=f"'{tool_type}' not found on PATH")
             continue
 
-        # Resolve targets
+        # ── subfinder: wildcard domain resolution + plain-text → JSONL upload ──
+        if tool_type == "subfinder":
+            try:
+                raw = client.scope(program_id)
+                domains = []
+                for item in raw.get("in", []):
+                    val = item.get("value", "")
+                    if _is_wildcard(val):
+                        stripped = val.lstrip("*").lstrip(".")
+                        if stripped:
+                            domains.append(stripped)
+            except Exception:
+                client.complete_job(job_id, "failed", error="Failed to resolve scope")
+                continue
+
+            if not domains:
+                console.print("[yellow]No wildcard scope entries — marking job as done.[/yellow]")
+                client.complete_job(job_id, "done")
+                continue
+
+            _confirm(domains, tool_type, yes)
+
+            try:
+                client.claim_job(job_id)
+            except Exception as e:
+                console.print(f"[red]Could not claim job:[/red] {e}")
+                continue
+
+            run_dir   = _make_run_dir()
+            sf_output = run_dir / "subfinder.txt"
+            console.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
+            rc = runner.run_subfinder(domains, sf_output)
+            if rc != 0:
+                console.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
+
+            if not sf_output.exists() or sf_output.stat().st_size == 0:
+                console.print("[yellow]No subdomains discovered.[/yellow]")
+                client.complete_job(job_id, "done")
+                continue
+
+            hosts = [ln.strip() for ln in sf_output.read_text().splitlines() if ln.strip()]
+            console.print(f"Discovered [bold]{len(hosts)}[/bold] subdomain(s).")
+
+            jsonl_path = run_dir / "subfinder_httpx.jsonl"
+            with jsonl_path.open("w") as fh:
+                for host in hosts:
+                    fh.write(json.dumps({"host": host, "source": "subfinder"}) + "\n")
+
+            console.print("Uploading as httpx recon targets…")
+            try:
+                result = client.import_file(program_id, "httpx", str(jsonl_path))
+                count  = result.get("import_record", {}).get("imported_count", "?")
+                console.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
+                client.complete_job(job_id, "done")
+            except Exception as e:
+                error_msg = str(e)
+                console.print(f"[red]Upload failed:[/red] {error_msg}")
+                client.complete_job(job_id, "failed", error=error_msg[:500])
+            continue
+
+        # ── httpx / nuclei: shared target resolution ────────────────────────────
         try:
             status_code: Optional[int] = cfg.get("status_code")
             limit: int = int(cfg.get("limit", 100))
@@ -112,8 +173,6 @@ def run_jobs(yes: bool = False) -> None:
         try:
             if tool_type == "httpx":
                 output = run_dir / "httpx.jsonl"
-                severity = None
-                templates = None
                 console.print(f"Running httpx… output → [dim]{output}[/dim]")
                 rc = runner.run_httpx(targets, output)
             else:  # nuclei

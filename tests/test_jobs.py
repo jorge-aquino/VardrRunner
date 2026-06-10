@@ -189,6 +189,62 @@ def test_run_jobs_no_jobs_exits():
         jobs_cmd.run_jobs(yes=True)
 
 
+def test_run_jobs_executes_subfinder_job(tmp_path):
+    """Subfinder job: extracts wildcard domains, runs subfinder, uploads as httpx."""
+    sf_output = tmp_path / "subfinder.txt"
+    sf_output.write_text("sub1.example.com\nsub2.example.com\n")
+
+    job = {
+        "id": "job-003", "program_id": "prog-1",
+        "tool_type": "subfinder", "target_source": "scope",
+        "config": {},
+    }
+
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {
+        "in": [{"value": "*.example.com", "kind": "domain"}],
+        "out": [],
+    }
+    client.import_file.return_value = {"import_record": {"imported_count": 2}}
+
+    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
+         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
+         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True), \
+         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path), \
+         patch("vardrrunner.commands.jobs.runner.run_subfinder", return_value=0):
+        jobs_cmd.run_jobs(yes=True)
+
+    client.claim_job.assert_called_once_with("job-003")
+    # Subfinder results are uploaded as "httpx" recon targets, not as "subfinder"
+    assert client.import_file.call_args[0][1] == "httpx"
+    client.complete_job.assert_called_once_with("job-003", "done")
+
+
+def test_run_jobs_subfinder_no_wildcards_marks_done():
+    """Subfinder job with no wildcard scope entries is marked done without execution."""
+    job = {
+        "id": "job-004", "program_id": "prog-1",
+        "tool_type": "subfinder", "target_source": "scope",
+        "config": {},
+    }
+
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {
+        "in": [{"value": "app.example.com", "kind": "domain"}],
+        "out": [],
+    }
+
+    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
+         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
+         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True):
+        jobs_cmd.run_jobs(yes=True)
+
+    client.claim_job.assert_not_called()
+    client.complete_job.assert_called_once_with("job-004", "done")
+
+
 def test_run_jobs_missing_tool_marks_failed():
     job = {
         "id": "job-002", "program_id": "prog-1",
