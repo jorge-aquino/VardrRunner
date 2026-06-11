@@ -32,7 +32,7 @@ def test_tool_version_returns_none_if_not_on_path():
 
 def test_tool_version_returns_none_for_unknown_tool():
     from vardrrunner import runner
-    assert runner.tool_version("nmap") is None
+    assert runner.tool_version("masscan") is None
 
 
 def test_tool_version_handles_subprocess_error():

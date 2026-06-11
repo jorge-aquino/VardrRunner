@@ -102,9 +102,9 @@ def test_client_pending_jobs():
 def test_client_claim_job():
     from vardrrunner.api import VardrMapClient
     client = VardrMapClient("http://api", "key")
-    with patch.object(client, "patch", return_value={"status": "running"}) as mock_patch:
+    with patch.object(client, "post", return_value={"status": "running"}) as mock_post:
         client.claim_job("job-123")
-    mock_patch.assert_called_once_with("/jobs/job-123", json={"status": "running"})
+    mock_post.assert_called_once_with("/jobs/job-123/claim")
 
 
 def test_client_complete_job_done():

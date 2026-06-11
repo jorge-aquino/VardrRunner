@@ -62,8 +62,8 @@ class VardrMapClient:
         return self.get("/jobs/pending").get("jobs", [])
 
     def claim_job(self, job_id: str) -> dict:
-        """Mark a job as running (claim it before executing)."""
-        return self.patch(f"/jobs/{job_id}", json={"status": "running"})
+        """Atomically claim a pending job. Raises HTTPError 409 if already claimed."""
+        return self.post(f"/jobs/{job_id}/claim")
 
     def complete_job(self, job_id: str, status: str, error: str = "") -> dict:
         """Mark a job done or failed."""
@@ -92,3 +92,11 @@ class VardrMapClient:
     def post_event(self, job_id: str, kind: str, text: str = "") -> dict:
         """Post a lifecycle event for a job (started, running, done, failed, …)."""
         return self.post(f"/jobs/{job_id}/events", json={"kind": kind, "text": text})
+
+    # ------------------------------------------------------------------
+    # Services
+    # ------------------------------------------------------------------
+
+    def create_services(self, program_id: str, services: list[dict]) -> dict:
+        """Bulk-upsert nmap service results for a program."""
+        return self.post(f"/programs/{program_id}/services", json={"services": services})
