@@ -228,3 +228,67 @@ def test_run_nmap_job_no_open_ports_marks_done(tmp_path):
 
     client.create_services.assert_not_called()
     client.complete_job.assert_called_once_with("job-nmap-2", "done")
+
+
+# ---------------------------------------------------------------------------
+# runner.strip_url_to_host
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("input_url,expected", [
+    ("https://app.example.com/path",  "app.example.com"),
+    ("https://app.example.com",       "app.example.com"),
+    ("http://10.0.0.1:8080",          "10.0.0.1"),
+    ("http://10.0.0.1:8080/api/v1",   "10.0.0.1"),
+    ("app.example.com",               "app.example.com"),
+    ("10.0.0.1",                      "10.0.0.1"),
+    ("sub.example.com/path",          "sub.example.com"),
+    ("https://EXAMPLE.COM/page",      "example.com"),      # hostname lowercased
+])
+def test_strip_url_to_host(input_url, expected):
+    assert runner.strip_url_to_host(input_url) == expected
+
+
+def test_strip_url_to_host_empty():
+    assert runner.strip_url_to_host("") == ""
+
+
+def test_strip_url_to_host_whitespace():
+    assert runner.strip_url_to_host("  https://app.example.com  ") == "app.example.com"
+
+
+# ---------------------------------------------------------------------------
+# jobs.run_jobs — nmap strips URLs before passing to run_nmap
+# ---------------------------------------------------------------------------
+
+def test_run_nmap_job_strips_url_targets(tmp_path):
+    """Verify that URL targets (https://...) are normalized to hostnames before nmap."""
+    (tmp_path / "nmap.xml").write_text(_NMAP_XML)
+    job = {
+        "id": "job-nmap-3", "program_id": "prog-1",
+        "tool_type": "nmap", "target_source": "recon",
+        "config": {"top_ports": 50, "timing": 2},
+    }
+
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.create_services.return_value = {"created": 2, "updated": 0}
+
+    captured_targets = []
+
+    def fake_run_nmap(targets, *a, **kw):
+        captured_targets.extend(targets)
+        return 0
+
+    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
+         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
+         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True), \
+         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path), \
+         patch("vardrrunner.commands.jobs._resolve_targets",
+               return_value=["https://app.example.com/path", "http://10.0.0.2:8080/api"]), \
+         patch("vardrrunner.commands.jobs.runner.run_nmap", side_effect=fake_run_nmap), \
+         patch("vardrrunner.commands.jobs.runner.parse_nmap_xml", return_value=[]):
+        jobs_cmd.run_jobs(yes=True)
+
+    assert "app.example.com" in captured_targets
+    assert "10.0.0.2" in captured_targets
+    assert not any("https" in t for t in captured_targets)

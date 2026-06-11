@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
@@ -49,6 +50,25 @@ def check_tool(name: str) -> None:
             f"'{name}' not found on PATH. Install it and make sure it is executable.",
             param_hint=name,
         )
+
+
+def strip_url_to_host(url: str) -> str:
+    """Extract the hostname from a URL so nmap receives a hostname/IP, not a full URL.
+
+    Examples:
+        "https://app.example.com/path"  → "app.example.com"
+        "http://10.0.0.1:8080"          → "10.0.0.1"
+        "app.example.com"               → "app.example.com"  (already bare, unchanged)
+    """
+    stripped = url.strip()
+    if not stripped:
+        return stripped
+    if "://" not in stripped:
+        # Bare hostname/IP — no scheme to parse; return as-is
+        return stripped.split("/")[0].split(":")[0]
+    parsed = urllib.parse.urlparse(stripped)
+    # hostname attribute lowercases and strips brackets from IPv6
+    return parsed.hostname or stripped
 
 
 def run_httpx(targets: list[str], output_path: Path) -> int:

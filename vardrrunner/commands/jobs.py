@@ -204,11 +204,15 @@ def run_jobs(yes: bool = False) -> None:
             run_dir   = _make_run_dir()
             xml_path  = run_dir / "nmap.xml"
 
+            # nmap needs hostnames/IPs, not full URLs — strip scheme/path
+            nmap_targets = [runner.strip_url_to_host(t) for t in targets if t.strip()]
+            nmap_targets = list(dict.fromkeys(nmap_targets))  # deduplicate, preserve order
+
             console.print(f"Running nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]")
-            _emit(client, job_id, "running", f"running nmap --top-ports {top_ports} against {len(targets)} target(s)")
+            _emit(client, job_id, "running", f"running nmap --top-ports {top_ports} against {len(nmap_targets)} target(s)")
 
             try:
-                rc = runner.run_nmap(targets, xml_path, top_ports=top_ports, timing=timing)
+                rc = runner.run_nmap(nmap_targets, xml_path, top_ports=top_ports, timing=timing)
                 if rc != 0:
                     console.print(f"[yellow]nmap exited with code {rc}[/yellow]")
 
