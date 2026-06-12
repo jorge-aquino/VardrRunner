@@ -4,7 +4,6 @@ Job queue commands: list pending jobs and run them locally.
 The UI creates job records; VardrRunner polls /jobs/pending, executes
 the tool locally, and uploads results via the existing import endpoint.
 """
-import datetime
 import json
 from pathlib import Path
 from typing import Optional
@@ -31,10 +30,10 @@ def list_jobs() -> None:
         raise typer.Exit(0)
 
     table = Table(title="Pending Scan Jobs")
-    table.add_column("ID",            style="dim", no_wrap=True)
-    table.add_column("Tool",          style="bold")
+    table.add_column("ID",      style="dim", no_wrap=True)
+    table.add_column("Tool",    style="bold")
     table.add_column("Source")
-    table.add_column("Config",        style="dim")
+    table.add_column("Config",  style="dim")
     table.add_column("Created")
 
     for j in jobs:
@@ -58,33 +57,30 @@ def _emit(client: api.VardrMapClient, job_id: str, kind: str, text: str = "") ->
         pass
 
 
-def run_jobs(yes: bool = False) -> None:
-    """Claim and execute all pending jobs for the authenticated user."""
-    # Report runner status so the Bridge shows this machine as online
-    send_heartbeat(quiet=True)
+def execute_pending_jobs(
+    client: api.VardrMapClient,
+    con: Console,
+    yes: bool = True,
+) -> int:
+    """Claim and execute all pending jobs. Returns the number of jobs found (0 if queue empty)."""
+    jobs_list = client.pending_jobs()
+    if not jobs_list:
+        return 0
 
-    url, key = config.require_auth()
-    client = api.VardrMapClient(url, key)
-    jobs = client.pending_jobs()
+    con.print(f"Found [bold]{len(jobs_list)}[/bold] pending job(s).")
 
-    if not jobs:
-        console.print("[dim]No pending jobs.[/dim]")
-        raise typer.Exit(0)
+    for job in jobs_list:
+        job_id     = job["id"]
+        tool_type  = job["tool_type"]
+        target_src = job["target_source"]
+        program_id = job["program_id"]
+        cfg        = job.get("config") or {}
 
-    console.print(f"Found [bold]{len(jobs)}[/bold] pending job(s).")
-
-    for job in jobs:
-        job_id      = job["id"]
-        tool_type   = job["tool_type"]
-        target_src  = job["target_source"]
-        program_id  = job["program_id"]
-        cfg         = job.get("config") or {}
-
-        console.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
+        con.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
 
         # Validate tool is installed before claiming
         if not runner.tool_available(tool_type):
-            console.print(f"[red]'{tool_type}' not found on PATH — marking job failed.[/red]")
+            con.print(f"[red]'{tool_type}' not found on PATH — marking job failed.[/red]")
             error = f"'{tool_type}' not found on PATH"
             client.complete_job(job_id, "failed", error=error)
             _emit(client, job_id, "failed", error)
@@ -108,7 +104,7 @@ def run_jobs(yes: bool = False) -> None:
                 continue
 
             if not domains:
-                console.print("[yellow]No wildcard scope entries — marking job as done.[/yellow]")
+                con.print("[yellow]No wildcard scope entries — marking job as done.[/yellow]")
                 client.complete_job(job_id, "done")
                 _emit(client, job_id, "done", "no wildcard scope entries")
                 continue
@@ -118,7 +114,7 @@ def run_jobs(yes: bool = False) -> None:
             try:
                 client.claim_job(job_id)
             except Exception as e:
-                console.print(f"[red]Could not claim job:[/red] {e}")
+                con.print(f"[red]Could not claim job:[/red] {e}")
                 continue
 
             _emit(client, job_id, "started", f"claimed job · {len(domains)} domain(s) to enumerate")
@@ -126,42 +122,42 @@ def run_jobs(yes: bool = False) -> None:
 
             run_dir   = _make_run_dir()
             sf_output = run_dir / "subfinder.txt"
-            console.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
+            con.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
             _emit(client, job_id, "running", f"running subfinder on {len(domains)} domain(s)")
             rc = runner.run_subfinder(domains, sf_output)
             if rc != 0:
-                console.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
+                con.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
 
             if not sf_output.exists() or sf_output.stat().st_size == 0:
-                console.print("[yellow]No subdomains discovered.[/yellow]")
+                con.print("[yellow]No subdomains discovered.[/yellow]")
                 client.complete_job(job_id, "done")
                 _emit(client, job_id, "done", "subfinder found no subdomains")
                 continue
 
             hosts = [ln.strip() for ln in sf_output.read_text().splitlines() if ln.strip()]
-            console.print(f"Discovered [bold]{len(hosts)}[/bold] subdomain(s).")
+            con.print(f"Discovered [bold]{len(hosts)}[/bold] subdomain(s).")
 
             jsonl_path = run_dir / "subfinder_httpx.jsonl"
             with jsonl_path.open("w") as fh:
                 for host in hosts:
                     fh.write(json.dumps({"host": host, "source": "subfinder"}) + "\n")
 
-            console.print("Uploading as httpx recon targets…")
+            con.print("Uploading as httpx recon targets…")
             try:
                 result = client.import_file(program_id, "httpx", str(jsonl_path))
                 count  = result.get("import_record", {}).get("imported_count", "?")
-                console.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
+                con.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
                 _emit(client, job_id, "uploaded", f"imported {count} subdomain(s) as recon targets")
                 client.complete_job(job_id, "done")
                 _emit(client, job_id, "done")
             except Exception as e:
                 error_msg = str(e)
-                console.print(f"[red]Upload failed:[/red] {error_msg}")
+                con.print(f"[red]Upload failed:[/red] {error_msg}")
                 client.complete_job(job_id, "failed", error=error_msg[:500])
                 _emit(client, job_id, "failed", error_msg[:500])
             continue
 
-        # ── nmap: service discovery — XML output → services API ─────────────────
+        # ── nmap: service discovery — XML output → services API ──────────────
         if tool_type == "nmap":
             try:
                 status_code_filter: Optional[int] = None
@@ -183,7 +179,7 @@ def run_jobs(yes: bool = False) -> None:
                 continue
 
             if not targets:
-                console.print("[yellow]No targets resolved — marking job as done.[/yellow]")
+                con.print("[yellow]No targets resolved — marking job as done.[/yellow]")
                 client.complete_job(job_id, "done")
                 _emit(client, job_id, "done", "no targets resolved")
                 continue
@@ -193,7 +189,7 @@ def run_jobs(yes: bool = False) -> None:
             try:
                 client.claim_job(job_id)
             except Exception as e:
-                console.print(f"[red]Could not claim job:[/red] {e}")
+                con.print(f"[red]Could not claim job:[/red] {e}")
                 continue
 
             _emit(client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}")
@@ -204,35 +200,34 @@ def run_jobs(yes: bool = False) -> None:
             run_dir   = _make_run_dir()
             xml_path  = run_dir / "nmap.xml"
 
-            # nmap needs hostnames/IPs, not full URLs — strip scheme/path
             nmap_targets = [runner.strip_url_to_host(t) for t in targets if t.strip()]
-            nmap_targets = list(dict.fromkeys(nmap_targets))  # deduplicate, preserve order
+            nmap_targets = list(dict.fromkeys(nmap_targets))
 
-            console.print(f"Running nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]")
+            con.print(f"Running nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]")
             _emit(client, job_id, "running", f"running nmap --top-ports {top_ports} against {len(nmap_targets)} target(s)")
 
             try:
                 rc = runner.run_nmap(nmap_targets, xml_path, top_ports=top_ports, timing=timing)
                 if rc != 0:
-                    console.print(f"[yellow]nmap exited with code {rc}[/yellow]")
+                    con.print(f"[yellow]nmap exited with code {rc}[/yellow]")
 
                 if not xml_path.exists() or xml_path.stat().st_size == 0:
-                    console.print("[yellow]No nmap output produced.[/yellow]")
+                    con.print("[yellow]No nmap output produced.[/yellow]")
                     client.complete_job(job_id, "done")
                     _emit(client, job_id, "done", "nmap produced no output")
                     continue
 
                 services = runner.parse_nmap_xml(xml_path)
-                console.print(f"Parsed [bold]{len(services)}[/bold] open port(s).")
+                con.print(f"Parsed [bold]{len(services)}[/bold] open port(s).")
 
                 if services:
                     result = client.create_services(program_id, services)
                     created = result.get("created", 0)
                     updated = result.get("updated", 0)
-                    console.print(f"[green]Done.[/green] {created} new, {updated} updated service(s).")
+                    con.print(f"[green]Done.[/green] {created} new, {updated} updated service(s).")
                     _emit(client, job_id, "uploaded", f"{created} new, {updated} updated service(s)")
                 else:
-                    console.print("[yellow]No open ports found.[/yellow]")
+                    con.print("[yellow]No open ports found.[/yellow]")
                     _emit(client, job_id, "uploaded", "no open ports found")
 
                 client.complete_job(job_id, "done")
@@ -240,12 +235,12 @@ def run_jobs(yes: bool = False) -> None:
 
             except Exception as e:
                 error_msg = str(e)
-                console.print(f"[red]Job failed:[/red] {error_msg}")
+                con.print(f"[red]Job failed:[/red] {error_msg}")
                 client.complete_job(job_id, "failed", error=error_msg[:500])
                 _emit(client, job_id, "failed", error_msg[:500])
             continue
 
-        # ── httpx / nuclei: shared target resolution ────────────────────────────
+        # ── httpx / nuclei: shared target resolution ──────────────────────────
         try:
             status_code: Optional[int] = cfg.get("status_code")
             limit: int = int(cfg.get("limit", 100))
@@ -266,65 +261,75 @@ def run_jobs(yes: bool = False) -> None:
             continue
 
         if not targets:
-            console.print("[yellow]No targets resolved — marking job as done.[/yellow]")
+            con.print("[yellow]No targets resolved — marking job as done.[/yellow]")
             client.complete_job(job_id, "done")
             _emit(client, job_id, "done", "no targets resolved")
             continue
 
         _confirm(targets, tool_type, yes)
 
-        # Claim the job
         try:
             client.claim_job(job_id)
         except Exception as e:
-            console.print(f"[red]Could not claim job:[/red] {e}")
+            con.print(f"[red]Could not claim job:[/red] {e}")
             continue
 
         _emit(client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}")
         _emit(client, job_id, "targets_resolved", f"{len(targets)} target(s) from {target_src}")
 
-        run_dir = _make_run_dir()
+        run_dir   = _make_run_dir()
         error_msg = ""
         try:
             if tool_type == "httpx":
                 output = run_dir / "httpx.jsonl"
-                console.print(f"Running httpx… output → [dim]{output}[/dim]")
+                con.print(f"Running httpx… output → [dim]{output}[/dim]")
                 _emit(client, job_id, "running", f"running httpx against {len(targets)} target(s)")
                 rc = runner.run_httpx(targets, output)
             else:  # nuclei
                 output = run_dir / "nuclei.jsonl"
-                severity     = cfg.get("severity")
+                severity      = cfg.get("severity")
                 raw_templates = cfg.get("templates")
-                # templates config is a comma-separated string from the UI (e.g. "cves,exposures");
-                # guard against a list in case it arrives that way from older clients
                 templates = (
                     ",".join(raw_templates) if isinstance(raw_templates, list)
                     else (raw_templates or None)
                 )
                 label = f"severity={severity}" if severity else "all"
-                console.print(f"Running nuclei ({label})… output → [dim]{output}[/dim]")
+                con.print(f"Running nuclei ({label})… output → [dim]{output}[/dim]")
                 _emit(client, job_id, "running", f"running nuclei ({label}) against {len(targets)} target(s)")
                 rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
 
             if rc != 0:
-                console.print(f"[yellow]{tool_type} exited with code {rc}[/yellow]")
+                con.print(f"[yellow]{tool_type} exited with code {rc}[/yellow]")
 
             if not output.exists() or output.stat().st_size == 0:
-                console.print("[yellow]No output produced — nothing to import.[/yellow]")
+                con.print("[yellow]No output produced — nothing to import.[/yellow]")
                 client.complete_job(job_id, "done")
                 _emit(client, job_id, "done", f"{tool_type} produced no output")
                 continue
 
-            console.print("Uploading results…")
+            con.print("Uploading results…")
             result = client.import_file(program_id, tool_type, str(output))
             count  = result.get("import_record", {}).get("imported_count", "?")
-            console.print(f"[green]Done.[/green] Imported {count} result(s).")
+            con.print(f"[green]Done.[/green] Imported {count} result(s).")
             _emit(client, job_id, "uploaded", f"imported {count} result(s)")
             client.complete_job(job_id, "done")
             _emit(client, job_id, "done")
 
         except Exception as e:
             error_msg = str(e)
-            console.print(f"[red]Job failed:[/red] {error_msg}")
+            con.print(f"[red]Job failed:[/red] {error_msg}")
             client.complete_job(job_id, "failed", error=error_msg[:500])
             _emit(client, job_id, "failed", error_msg[:500])
+
+    return len(jobs_list)
+
+
+def run_jobs(yes: bool = False) -> None:
+    """Claim and execute all pending jobs for the authenticated user."""
+    send_heartbeat(quiet=True)
+    url, key = config.require_auth()
+    client = api.VardrMapClient(url, key)
+    executed = execute_pending_jobs(client, console, yes=yes)
+    if executed == 0:
+        console.print("[dim]No pending jobs.[/dim]")
+        raise typer.Exit(0)

@@ -10,7 +10,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from vardrrunner.commands import auth, heartbeat as heartbeat_cmd, imports, jobs, programs, run
+from vardrrunner.commands import auth, daemon as daemon_cmd, heartbeat as heartbeat_cmd, imports, jobs, programs, run
 from vardrrunner.commands import status as status_cmd
 
 console = Console()
@@ -105,6 +105,46 @@ def import_ffuf(
 # --------------------------------------------------------------------------- #
 # Run
 # --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+# Jobs
+# --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+# Daemon
+# --------------------------------------------------------------------------- #
+
+daemon_app = typer.Typer(help="Long-running background worker: polls jobs and sends heartbeats.", no_args_is_help=True)
+app.add_typer(daemon_app, name="daemon")
+
+
+@daemon_app.command("start")
+def daemon_start(
+    detach: bool           = typer.Option(False, "--detach", "-d", help="Run in background"),
+    poll_interval: int     = typer.Option(5,  "--poll-interval",    help="Seconds between job polls"),
+    heartbeat_interval: int = typer.Option(60, "--heartbeat-interval", help="Seconds between heartbeats"),
+    log_file: Optional[Path] = typer.Option(None, "--log-file",       help="Append output to file"),
+):
+    """Start the daemon (foreground by default, use --detach for background)."""
+    daemon_cmd.start(
+        detach=detach,
+        poll_interval=poll_interval,
+        heartbeat_interval=heartbeat_interval,
+        log_file=log_file,
+    )
+
+
+@daemon_app.command("stop")
+def daemon_stop():
+    """Stop a running daemon."""
+    daemon_cmd.stop()
+
+
+@daemon_app.command("status")
+def daemon_status():
+    """Show whether the daemon is running."""
+    daemon_cmd.status()
+
 
 # --------------------------------------------------------------------------- #
 # Jobs
