@@ -1,12 +1,13 @@
 """
 Tests for the VardrRunner daemon: PID helpers, stop, status, _detach, and the
 main polling loop. All signal delivery and subprocess calls are mocked.
+
+Platform-dependent paths (Windows vs POSIX) are tested by monkeypatching the
+module-level _IS_WINDOWS flag rather than relying on the host OS.
 """
 import os
 import signal
-import threading
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
@@ -25,6 +26,25 @@ def pid_file(tmp_path, monkeypatch):
     pf = tmp_path / ".vardrrunner.pid"
     monkeypatch.setattr(daemon_mod, "PID_FILE", pf)
     return pf
+
+
+def _fake_event_factory(stop_after: int):
+    """Build a threading.Event stand-in whose is_set() flips True after N checks."""
+    iterations = {"n": 0}
+
+    class FakeEvent:
+        def is_set(self):
+            r = iterations["n"] >= stop_after
+            iterations["n"] += 1
+            return r
+
+        def wait(self, timeout=None):
+            return False
+
+        def set(self):
+            pass
+
+    return FakeEvent
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +79,29 @@ class TestProcessAlive:
     def test_nonexistent_pid_returns_false(self):
         assert daemon_mod._process_alive(2_000_000_000) is False
 
+    def test_posix_permission_error_means_alive(self, monkeypatch):
+        """On POSIX, EPERM from kill(pid, 0) means the process exists."""
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", False)
+        with patch("vardrrunner.commands.daemon.os.kill", side_effect=PermissionError):
+            assert daemon_mod._process_alive(1234) is True
+
+    def test_posix_lookup_error_means_dead(self, monkeypatch):
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", False)
+        with patch("vardrrunner.commands.daemon.os.kill", side_effect=ProcessLookupError):
+            assert daemon_mod._process_alive(1234) is False
+
+    def test_windows_never_calls_os_kill(self, monkeypatch):
+        """os.kill on Windows is TerminateProcess — the probe must never use it."""
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", True)
+        fake_kernel32 = MagicMock()
+        fake_kernel32.OpenProcess.return_value = 0  # process not found
+        fake_ctypes = MagicMock()
+        fake_ctypes.windll.kernel32 = fake_kernel32
+        with patch.dict("sys.modules", {"ctypes": fake_ctypes}), \
+             patch("vardrrunner.commands.daemon.os.kill") as mock_kill:
+            assert daemon_mod._process_alive(1234) is False
+        mock_kill.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # stop
@@ -75,12 +118,30 @@ class TestStop:
             daemon_mod.stop()
         assert not pid_file.exists()
 
-    def test_live_pid_sends_sigterm(self, pid_file):
-        pid_file.write_text(str(os.getpid()))
-        with patch("vardrrunner.commands.daemon.os.kill") as mock_kill:
+    def test_live_pid_removes_pid_file(self, pid_file):
+        """Removing the PID file is the cross-platform graceful stop signal."""
+        pid_file.write_text("1234")
+        with patch.object(daemon_mod, "_process_alive", return_value=True):
             daemon_mod.stop()
-        # os.kill is also called with signal 0 by _process_alive; assert the SIGTERM call happened
-        mock_kill.assert_any_call(os.getpid(), signal.SIGTERM)
+        assert not pid_file.exists()
+
+    def test_posix_also_sends_sigterm(self, pid_file, monkeypatch):
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", False)
+        pid_file.write_text("1234")
+        with patch.object(daemon_mod, "_process_alive", return_value=True), \
+             patch("vardrrunner.commands.daemon.os.kill") as mock_kill:
+            daemon_mod.stop()
+        mock_kill.assert_called_once_with(1234, signal.SIGTERM)
+
+    def test_windows_does_not_call_os_kill(self, pid_file, monkeypatch):
+        """On Windows os.kill would hard-kill mid-job — stop must rely on the PID file only."""
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", True)
+        pid_file.write_text("1234")
+        with patch.object(daemon_mod, "_process_alive", return_value=True), \
+             patch("vardrrunner.commands.daemon.os.kill") as mock_kill:
+            daemon_mod.stop()
+        mock_kill.assert_not_called()
+        assert not pid_file.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -91,10 +152,10 @@ class TestStatus:
     def test_no_pid_file_does_not_raise(self, pid_file):
         daemon_mod.status()  # should not raise
 
-    def test_live_pid_prints_running(self, pid_file, capsys):
+    def test_live_pid_does_not_raise(self, pid_file):
         pid_file.write_text(str(os.getpid()))
         daemon_mod.status()
-        # Rich writes to its own console, not capsys — just check it doesn't raise
+        assert pid_file.exists()  # status must never remove a live daemon's PID file
 
     def test_stale_pid_removes_file(self, pid_file):
         pid_file.write_text("2000000000")
@@ -107,20 +168,16 @@ class TestStatus:
 # ---------------------------------------------------------------------------
 
 class TestDetach:
-    def test_spawns_daemon_process(self, tmp_path, monkeypatch):
+    def test_spawns_daemon_process(self, tmp_path):
         log = tmp_path / "daemon.log"
-        exe = "vardrrunner"
-
-        with patch("vardrrunner.commands.daemon.shutil.which", return_value=exe), \
+        with patch("vardrrunner.commands.daemon.shutil.which", return_value="vardrrunner"), \
              patch("vardrrunner.commands.daemon.subprocess.Popen") as MockPopen:
-            mock_proc = MagicMock()
-            mock_proc.pid = 9999
-            MockPopen.return_value = mock_proc
+            MockPopen.return_value = MagicMock(pid=9999)
             daemon_mod._detach(poll_interval=5, heartbeat_interval=60, log_file=log)
 
-        args, kwargs = MockPopen.call_args
+        args, _ = MockPopen.call_args
         cmd = args[0]
-        assert cmd[0] == exe
+        assert cmd[0] == "vardrrunner"
         assert "daemon" in cmd
         assert "start" in cmd
         assert "--poll-interval" in cmd
@@ -136,105 +193,63 @@ class TestDetach:
         args, _ = MockPopen.call_args
         assert str(tmp_path / "daemon.log") in args[0]
 
-    def test_detach_uses_start_new_session(self, tmp_path):
-        log = tmp_path / "daemon.log"
+    def test_posix_uses_start_new_session(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", False)
         with patch("vardrrunner.commands.daemon.shutil.which", return_value="vardrrunner"), \
              patch("vardrrunner.commands.daemon.subprocess.Popen") as MockPopen:
             MockPopen.return_value = MagicMock(pid=1)
-            daemon_mod._detach(poll_interval=5, heartbeat_interval=60, log_file=log)
+            daemon_mod._detach(poll_interval=5, heartbeat_interval=60, log_file=tmp_path / "d.log")
 
         _, kwargs = MockPopen.call_args
         assert kwargs.get("start_new_session") is True
+        assert "creationflags" not in kwargs
+
+    def test_windows_uses_detached_process_flags(self, tmp_path, monkeypatch):
+        """Windows needs DETACHED_PROCESS so the daemon survives terminal close."""
+        monkeypatch.setattr(daemon_mod, "_IS_WINDOWS", True)
+        # These constants only exist in subprocess on Windows builds
+        monkeypatch.setattr(daemon_mod.subprocess, "DETACHED_PROCESS", 0x8, raising=False)
+        monkeypatch.setattr(daemon_mod.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
+        with patch("vardrrunner.commands.daemon.shutil.which", return_value="vardrrunner"), \
+             patch("vardrrunner.commands.daemon.subprocess.Popen") as MockPopen:
+            MockPopen.return_value = MagicMock(pid=1)
+            daemon_mod._detach(poll_interval=5, heartbeat_interval=60, log_file=tmp_path / "d.log")
+
+        _, kwargs = MockPopen.call_args
+        assert kwargs.get("creationflags") == (0x8 | 0x200)
+        assert "start_new_session" not in kwargs
 
 
 # ---------------------------------------------------------------------------
 # start (foreground loop)
 # ---------------------------------------------------------------------------
 
+def _run_start(pid_file, stop_after: int, execute=None):
+    """Run daemon_mod.start with all externals mocked; loop exits after N cycles."""
+    execute = execute if execute is not None else MagicMock(return_value=0)
+    with patch("vardrrunner.commands.daemon.threading.Event", _fake_event_factory(stop_after)), \
+         patch("vardrrunner.commands.daemon.threading.Thread") as MockThread, \
+         patch("vardrrunner.commands.daemon.signal.signal"), \
+         patch("vardrrunner.commands.daemon.config.require_auth", return_value=("http://api", "key")), \
+         patch("vardrrunner.commands.daemon.api.VardrMapClient"), \
+         patch("vardrrunner.commands.daemon.execute_pending_jobs", execute), \
+         patch("vardrrunner.commands.daemon.send_heartbeat"):
+        daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=None)
+    return execute, MockThread
+
+
 class TestStart:
-    def test_writes_and_removes_pid_file(self, pid_file, monkeypatch):
+    def test_writes_and_removes_pid_file(self, pid_file):
         """Daemon writes PID on entry and removes it in the finally block."""
-        # Control the event: one pass through the loop, then stop
-        iterations = {"n": 0}
-
-        class FakeEvent:
-            def __init__(self):
-                self._set = False
-
-            def is_set(self):
-                r = iterations["n"] >= 1
-                iterations["n"] += 1
-                return r
-
-            def wait(self, timeout=None):
-                return self._set
-
-            def set(self):
-                self._set = True
-
-        with patch("vardrrunner.commands.daemon.threading.Event", FakeEvent), \
-             patch("vardrrunner.commands.daemon.threading.Thread") as MockThread, \
-             patch("vardrrunner.commands.daemon.signal.signal"), \
-             patch("vardrrunner.commands.daemon.config.require_auth", return_value=("http://api", "key")), \
-             patch("vardrrunner.commands.daemon.api.VardrMapClient"), \
-             patch("vardrrunner.commands.daemon.execute_pending_jobs", return_value=0), \
-             patch("vardrrunner.commands.daemon.send_heartbeat"):
-            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=None)
-
-        assert not pid_file.exists()  # cleaned up in finally
+        _run_start(pid_file, stop_after=1)
+        assert not pid_file.exists()
 
     def test_calls_execute_pending_jobs(self, pid_file):
-        """Daemon calls execute_pending_jobs on each poll cycle."""
-        iterations = {"n": 0}
-
-        class FakeEvent:
-            def is_set(self):
-                r = iterations["n"] >= 1
-                iterations["n"] += 1
-                return r
-
-            def wait(self, timeout=None):
-                return False
-
-            def set(self):
-                pass
-
-        with patch("vardrrunner.commands.daemon.threading.Event", FakeEvent), \
-             patch("vardrrunner.commands.daemon.threading.Thread"), \
-             patch("vardrrunner.commands.daemon.signal.signal"), \
-             patch("vardrrunner.commands.daemon.config.require_auth", return_value=("http://api", "key")), \
-             patch("vardrrunner.commands.daemon.api.VardrMapClient"), \
-             patch("vardrrunner.commands.daemon.execute_pending_jobs", return_value=0) as mock_exec, \
-             patch("vardrrunner.commands.daemon.send_heartbeat"):
-            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=None)
-
-        mock_exec.assert_called_once()
+        execute, _ = _run_start(pid_file, stop_after=1)
+        execute.assert_called_once()
 
     def test_starts_heartbeat_thread(self, pid_file):
-        """Daemon starts the heartbeat background thread."""
-        iterations = {"n": 0}
-
-        class FakeEvent:
-            def is_set(self):
-                r = iterations["n"] >= 1
-                iterations["n"] += 1
-                return r
-
-            def wait(self, timeout=None):
-                return False
-
-            def set(self):
-                pass
-
-        with patch("vardrrunner.commands.daemon.threading.Event", FakeEvent), \
-             patch("vardrrunner.commands.daemon.threading.Thread") as MockThread, \
-             patch("vardrrunner.commands.daemon.signal.signal"), \
-             patch("vardrrunner.commands.daemon.config.require_auth", return_value=("http://api", "key")), \
-             patch("vardrrunner.commands.daemon.api.VardrMapClient"), \
-             patch("vardrrunner.commands.daemon.execute_pending_jobs", return_value=0), \
-             patch("vardrrunner.commands.daemon.send_heartbeat"):
-            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=None)
-
+        _, MockThread = _run_start(pid_file, stop_after=1)
         MockThread.assert_called_once()
         MockThread.return_value.start.assert_called_once()
 
@@ -242,6 +257,20 @@ class TestStart:
         with patch("vardrrunner.commands.daemon.config.require_auth", side_effect=RuntimeError("no creds")):
             with pytest.raises(typer.Exit):
                 daemon_mod.start(detach=False, poll_interval=5, heartbeat_interval=60, log_file=None)
+
+    def test_refuses_to_start_when_already_running(self, pid_file):
+        """A second daemon must not silently overwrite a live daemon's PID file."""
+        pid_file.write_text("1234")
+        with patch.object(daemon_mod, "_process_alive", return_value=True):
+            with pytest.raises(typer.Exit):
+                daemon_mod.start(detach=False, poll_interval=5, heartbeat_interval=60, log_file=None)
+        assert pid_file.read_text() == "1234"  # untouched
+
+    def test_starts_over_stale_pid_file(self, pid_file):
+        """A dead process's leftover PID file must not block startup."""
+        pid_file.write_text("2000000000")
+        _run_start(pid_file, stop_after=1)
+        assert not pid_file.exists()  # ran and cleaned up
 
     def test_detach_delegates_to_detach(self, pid_file, tmp_path):
         log = tmp_path / "daemon.log"
@@ -251,20 +280,6 @@ class TestStart:
 
     def test_poll_error_does_not_crash_daemon(self, pid_file):
         """A transient API error is caught and the loop continues."""
-        iterations = {"n": 0}
-
-        class FakeEvent:
-            def is_set(self):
-                r = iterations["n"] >= 2
-                iterations["n"] += 1
-                return r
-
-            def wait(self, timeout=None):
-                return False
-
-            def set(self):
-                pass
-
         call_count = {"n": 0}
 
         def flaky_execute(*args, **kwargs):
@@ -273,16 +288,19 @@ class TestStart:
                 raise RuntimeError("temporary network error")
             return 0
 
-        with patch("vardrrunner.commands.daemon.threading.Event", FakeEvent), \
-             patch("vardrrunner.commands.daemon.threading.Thread"), \
-             patch("vardrrunner.commands.daemon.signal.signal"), \
-             patch("vardrrunner.commands.daemon.config.require_auth", return_value=("http://api", "key")), \
-             patch("vardrrunner.commands.daemon.api.VardrMapClient"), \
-             patch("vardrrunner.commands.daemon.execute_pending_jobs", side_effect=flaky_execute), \
-             patch("vardrrunner.commands.daemon.send_heartbeat"):
-            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=None)
-
+        _run_start(pid_file, stop_after=2, execute=MagicMock(side_effect=flaky_execute))
         assert call_count["n"] == 2  # tried twice despite first failure
+
+    def test_pid_file_removal_stops_loop(self, pid_file):
+        """Deleting the PID file (what `stop` does) ends the loop gracefully."""
+        def remove_pid_file(*args, **kwargs):
+            pid_file.unlink(missing_ok=True)
+            return 0
+
+        # Event never fires — only the PID-file check can end the loop
+        execute, _ = _run_start(pid_file, stop_after=99, execute=MagicMock(side_effect=remove_pid_file))
+        execute.assert_called_once()
+        assert not pid_file.exists()
 
 
 # ---------------------------------------------------------------------------
