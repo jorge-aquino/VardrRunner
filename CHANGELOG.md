@@ -6,6 +6,15 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+### Changed
+- **Resilient API client.** The HTTP session now retries transient failures
+  (connection errors and 429/500/502/503/504) with exponential backoff, so a
+  long-running daemon survives network blips and brief backend restarts. Retries
+  are limited to idempotent methods — POST/PATCH are never auto-retried, so a
+  dropped response can't cause a double-claim, double-import, or duplicate event.
+  Retry count and backoff are constructor-configurable.
+- Requests now send a `User-Agent: vardrrunner/<version> (<os>)` header so the
+  backend can attribute traffic to a runner and version.
 
 ## [0.18.0] — 2026-06-14
 First release from the standalone repository. See

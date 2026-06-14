@@ -1,18 +1,60 @@
 """
 Thin wrapper around requests for authenticated calls to the VardrMap API.
 All methods raise requests.HTTPError on non-2xx responses.
+
+The session retries transient failures (connection errors and 429/5xx) with
+exponential backoff so a long-running daemon survives network blips and brief
+backend restarts. Retries are limited to idempotent methods (urllib3's default:
+GET/HEAD/PUT/DELETE/OPTIONS/TRACE) — POST and PATCH are never auto-retried, so a
+dropped response can't cause a double-claim, double-import, or duplicate event.
 """
 
+import platform
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from vardrrunner import __version__
+
+# Statuses worth retrying: rate-limit + transient server/proxy errors.
+_RETRY_STATUSES = (429, 500, 502, 503, 504)
 
 
 class VardrMapClient:
-    def __init__(self, api_url: str, api_key: str):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: str,
+        *,
+        retries: int = 3,
+        backoff_factor: float = 0.5,
+    ):
         self.base = api_url.rstrip("/")
         self.session = requests.Session()
-        self.session.headers.update({"Authorization": f"Bearer {api_key}"})
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {api_key}",
+                # Identify the runner + version in backend logs.
+                "User-Agent": f"vardrrunner/{__version__} ({platform.system()})",
+            }
+        )
+
+        # Mount a retry-with-backoff adapter for transient failures. allowed_methods
+        # is left at urllib3's idempotent-only default so POST/PATCH are not retried.
+        retry = Retry(
+            total=retries,
+            connect=retries,
+            read=retries,
+            status=retries,
+            backoff_factor=backoff_factor,
+            status_forcelist=_RETRY_STATUSES,
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
     def _url(self, path: str) -> str:
         return f"{self.base}/{path.lstrip('/')}"
