@@ -58,7 +58,7 @@ def _process_alive(pid: int) -> bool:
 
         STILL_ACTIVE = 259
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]  # Windows-only
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             return False
@@ -248,9 +248,10 @@ def _detach(poll_interval: int, heartbeat_interval: int, log_file: Path | None) 
     # Windows needs DETACHED_PROCESS (start_new_session is POSIX-only).
     popen_kwargs: dict = {}
     if _IS_WINDOWS:
-        popen_kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        # DETACHED_PROCESS / CREATE_NEW_PROCESS_GROUP are Windows-only — absent when
+        # mypy type-checks on Linux (CI), so ignore the attr-defined error there.
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        popen_kwargs["creationflags"] = flags
     else:
         popen_kwargs["start_new_session"] = True
 
