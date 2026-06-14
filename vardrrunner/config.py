@@ -2,14 +2,14 @@
 Config is stored at ~/.vardrmap/config.json.
 Treat this file like a secret — it contains your API key in plaintext.
 """
+
 import json
 import stat
 from pathlib import Path
-from typing import Optional
 
-CONFIG_DIR  = Path.home() / ".vardrmap"
+CONFIG_DIR = Path.home() / ".vardrmap"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-RUNS_DIR    = CONFIG_DIR / "runs"
+RUNS_DIR = CONFIG_DIR / "runs"
 
 
 def config_dir() -> Path:
@@ -39,11 +39,11 @@ def save(data: dict) -> None:
         pass
 
 
-def get_api_url() -> Optional[str]:
+def get_api_url() -> str | None:
     return load().get("api_url")
 
 
-def get_api_key() -> Optional[str]:
+def get_api_key() -> str | None:
     return load().get("api_key")
 
 
@@ -54,6 +54,7 @@ def require_auth() -> tuple[str, str]:
     key = cfg.get("api_key")
     if not url or not key:
         import typer
+
         raise typer.BadParameter(
             "Not logged in. Run: vardrrunner login vardrmap",
             param_hint="auth",

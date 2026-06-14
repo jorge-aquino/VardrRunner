@@ -16,6 +16,7 @@ any sig other than CTRL_C_EVENT/CTRL_BREAK_EVENT calls TerminateProcess and
 unconditionally kills the target. Never use os.kill(pid, 0) as a liveness
 probe on Windows.
 """
+
 import os
 import shutil
 import signal
@@ -23,7 +24,6 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -42,7 +42,8 @@ _IS_WINDOWS = os.name == "nt"
 
 # ── PID helpers ──────────────────────────────────────────────────────────────
 
-def _read_pid() -> Optional[int]:
+
+def _read_pid() -> int | None:
     try:
         return int(PID_FILE.read_text().strip())
     except (FileNotFoundError, ValueError):
@@ -54,9 +55,10 @@ def _process_alive(pid: int) -> bool:
     if _IS_WINDOWS:
         # Query the process handle instead of os.kill — see module docstring.
         import ctypes
+
         STILL_ACTIVE = 259
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]  # Windows-only
         handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             return False
@@ -79,15 +81,21 @@ def _process_alive(pid: int) -> bool:
 
 # ── Commands ─────────────────────────────────────────────────────────────────
 
+
 def start(
     detach: bool = typer.Option(
-        False, "--detach", "-d",
+        False,
+        "--detach",
+        "-d",
         help="Run in background and write PID to ~/.vardrrunner.pid",
     ),
     poll_interval: int = typer.Option(5, "--poll-interval", help="Seconds between job polls"),
-    heartbeat_interval: int = typer.Option(60, "--heartbeat-interval", help="Seconds between heartbeats"),
-    log_file: Optional[Path] = typer.Option(
-        None, "--log-file",
+    heartbeat_interval: int = typer.Option(
+        60, "--heartbeat-interval", help="Seconds between heartbeats"
+    ),
+    log_file: Path | None = typer.Option(
+        None,
+        "--log-file",
         help="Append output to file (defaults to ~/.vardrrunner.log when --detach is used)",
     ),
 ) -> None:
@@ -101,14 +109,16 @@ def start(
         raise typer.Exit(1)
 
     if detach:
-        _detach(poll_interval=poll_interval, heartbeat_interval=heartbeat_interval, log_file=log_file)
+        _detach(
+            poll_interval=poll_interval, heartbeat_interval=heartbeat_interval, log_file=log_file
+        )
         return
 
     try:
         config.require_auth()
     except Exception as e:
         console.print(f"[red]Not authenticated:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     out = console
     _fh = None
@@ -133,7 +143,7 @@ def start(
 
     # SIGINT covers Ctrl+C on both platforms; SIGTERM only fires on POSIX
     # (Windows termination is handled by the PID-file check below).
-    signal.signal(signal.SIGINT,  _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
     signal.signal(signal.SIGTERM, _on_signal)
 
     def _shutdown_requested() -> bool:
@@ -153,8 +163,8 @@ def start(
         while not _shutdown_requested():
             try:
                 url, key = config.require_auth()
-                client   = api.VardrMapClient(url, key)
-                count    = execute_pending_jobs(client, out)
+                client = api.VardrMapClient(url, key)
+                count = execute_pending_jobs(client, out)
                 if count:
                     out.print(f"[dim]Cycle complete — {count} job(s) executed.[/dim]")
             except Exception as e:
@@ -213,17 +223,22 @@ def status() -> None:
         PID_FILE.unlink(missing_ok=True)
 
 
-def _detach(poll_interval: int, heartbeat_interval: int, log_file: Optional[Path]) -> None:
+def _detach(poll_interval: int, heartbeat_interval: int, log_file: Path | None) -> None:
     """Re-launch self without --detach so the child runs as a foreground daemon."""
     exe = shutil.which("vardrrunner") or sys.argv[0]
     if log_file is None:
         log_file = DEFAULT_LOG
 
     cmd = [
-        exe, "daemon", "start",
-        "--poll-interval", str(poll_interval),
-        "--heartbeat-interval", str(heartbeat_interval),
-        "--log-file", str(log_file),
+        exe,
+        "daemon",
+        "start",
+        "--poll-interval",
+        str(poll_interval),
+        "--heartbeat-interval",
+        str(heartbeat_interval),
+        "--log-file",
+        str(log_file),
     ]
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -233,9 +248,10 @@ def _detach(poll_interval: int, heartbeat_interval: int, log_file: Optional[Path
     # Windows needs DETACHED_PROCESS (start_new_session is POSIX-only).
     popen_kwargs: dict = {}
     if _IS_WINDOWS:
-        popen_kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        # DETACHED_PROCESS / CREATE_NEW_PROCESS_GROUP are Windows-only — absent when
+        # mypy type-checks on Linux (CI), so ignore the attr-defined error there.
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        popen_kwargs["creationflags"] = flags
     else:
         popen_kwargs["start_new_session"] = True
 

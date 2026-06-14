@@ -78,14 +78,18 @@ restricted to the owner on Unix).
 
 ## Development & testing
 ```bash
-pip install -e . && pip install pytest
-pytest tests -q     # 113 tests; all subprocess + HTTP calls are mocked
+pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
+ruff check vardrrunner tests           # lint
+ruff format --check vardrrunner tests  # formatting
+mypy vardrrunner                       # type check
+pytest tests              # 113 tests; all subprocess + HTTP calls are mocked
 ```
+CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,
 tests in the same commit, docs updated, and the suite always green.
 
 ## License
-TBD.
+[MIT](LICENSE) © 2026 Jorge Aquino.
 
 ---
 *Part of the VardrSec product family — [VardrMap](https://github.com/jorge-aquino/VardrMap) · VardrRunner · VardrVault.*

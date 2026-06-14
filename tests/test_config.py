@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import pytest
 
 from vardrrunner import config
@@ -9,9 +6,9 @@ from vardrrunner import config
 @pytest.fixture(autouse=True)
 def tmp_config(tmp_path, monkeypatch):
     """Redirect config to a temp directory so tests never touch ~/.vardrmap."""
-    monkeypatch.setattr(config, "CONFIG_DIR",  tmp_path)
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "config.json")
-    monkeypatch.setattr(config, "RUNS_DIR",    tmp_path / "runs")
+    monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     yield tmp_path
 
 
@@ -27,7 +24,7 @@ def test_save_and_load_roundtrip():
 
 def test_save_creates_parent_directories(tmp_path, monkeypatch):
     nested = tmp_path / "deep" / "nested"
-    monkeypatch.setattr(config, "CONFIG_DIR",  nested)
+    monkeypatch.setattr(config, "CONFIG_DIR", nested)
     monkeypatch.setattr(config, "CONFIG_FILE", nested / "config.json")
     config.save({"api_url": "x", "api_key": "vmap_y"})
     assert (nested / "config.json").exists()

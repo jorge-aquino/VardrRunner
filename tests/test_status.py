@@ -2,6 +2,7 @@
 Tests for vardrrunner status command.
 All network calls and tool checks are mocked.
 """
+
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -19,11 +20,13 @@ def _patch_status(
     tool_available=True,
 ):
     """Helper: patch all external calls for run_status()."""
-    cfg = config_data if config_data is not None else {"api_url": "http://api", "api_key": "vmap_abc"}
+    cfg = (
+        config_data if config_data is not None else {"api_url": "http://api", "api_key": "vmap_abc"}
+    )
 
     patches = [
         patch("vardrrunner.commands.status.config.load", return_value=cfg),
-        patch("vardrrunner.commands.status.config.CONFIG_FILE") ,
+        patch("vardrrunner.commands.status.config.CONFIG_FILE"),
         patch("vardrrunner.commands.status.runner.tool_available", return_value=tool_available),
     ]
 
@@ -41,9 +44,13 @@ def _patch_status(
     if programs_exc:
         client_mock.programs.side_effect = programs_exc
     else:
-        client_mock.programs.return_value = programs_result if programs_result is not None else [{"id": "p1"}, {"id": "p2"}]
+        client_mock.programs.return_value = (
+            programs_result if programs_result is not None else [{"id": "p1"}, {"id": "p2"}]
+        )
 
-    patches.append(patch("vardrrunner.commands.status.api.VardrMapClient", return_value=client_mock))
+    patches.append(
+        patch("vardrrunner.commands.status.api.VardrMapClient", return_value=client_mock)
+    )
 
     return patches, client_mock
 
@@ -52,19 +59,24 @@ def _patch_status(
 # Not logged in
 # ---------------------------------------------------------------------------
 
+
 def test_status_no_config(capsys):
-    with patch("vardrrunner.commands.status.config.load", return_value={}), \
-         patch("vardrrunner.commands.status.config.CONFIG_FILE") as mock_cf, \
-         patch("vardrrunner.commands.status.runner.tool_available", return_value=True):
+    with (
+        patch("vardrrunner.commands.status.config.load", return_value={}),
+        patch("vardrrunner.commands.status.config.CONFIG_FILE") as mock_cf,
+        patch("vardrrunner.commands.status.runner.tool_available", return_value=True),
+    ):
         mock_cf.exists.return_value = False
         run_status()
     # should not raise; should print login hint
 
 
 def test_status_missing_api_key(capsys):
-    with patch("vardrrunner.commands.status.config.load", return_value={"api_url": "http://api"}), \
-         patch("vardrrunner.commands.status.config.CONFIG_FILE") as mock_cf, \
-         patch("vardrrunner.commands.status.runner.tool_available", return_value=True):
+    with (
+        patch("vardrrunner.commands.status.config.load", return_value={"api_url": "http://api"}),
+        patch("vardrrunner.commands.status.config.CONFIG_FILE") as mock_cf,
+        patch("vardrrunner.commands.status.runner.tool_available", return_value=True),
+    ):
         mock_cf.exists.return_value = True
         run_status()
     # should not crash; stops after config section
@@ -73,6 +85,7 @@ def test_status_missing_api_key(capsys):
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
+
 
 def test_status_all_ok():
     patches, client = _patch_status(
@@ -99,6 +112,7 @@ def test_status_one_program():
 # Auth failures
 # ---------------------------------------------------------------------------
 
+
 def test_status_http_error_401():
     err = requests.HTTPError(response=MagicMock(status_code=401))
     patches, client = _patch_status(whoami_exc=err)
@@ -123,13 +137,18 @@ def test_status_programs_fetch_fails():
 # Tool availability
 # ---------------------------------------------------------------------------
 
+
 def test_status_tool_missing():
     def selective_available(name):
         return name != "nuclei"
 
     patches, _ = _patch_status()
-    with patches[0], patches[1], patches[3], \
-         patch("vardrrunner.commands.status.runner.tool_available", side_effect=selective_available):
+    with (
+        patches[0],
+        patches[1],
+        patches[3],
+        patch("vardrrunner.commands.status.runner.tool_available", side_effect=selective_available),
+    ):
         run_status()  # nuclei missing — should not raise
 
 
@@ -142,6 +161,7 @@ def test_status_all_tools_missing():
 # ---------------------------------------------------------------------------
 # API key never printed
 # ---------------------------------------------------------------------------
+
 
 def test_status_does_not_print_api_key(capsys):
     patches, _ = _patch_status(config_data={"api_url": "http://api", "api_key": "vmap_supersecret"})

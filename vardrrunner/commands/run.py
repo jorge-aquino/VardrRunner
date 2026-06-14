@@ -2,9 +2,9 @@
 Run a tool against targets fetched from VardrMap, then upload the results.
 Tools execute locally — scan traffic comes from the user's machine.
 """
+
 import datetime
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -33,9 +33,9 @@ def _resolve_targets(
     program_id: str,
     scope: bool,
     from_recon: bool,
-    target: Optional[str],
-    targets_file: Optional[Path],
-    status_code: Optional[int],
+    target: str | None,
+    targets_file: Path | None,
+    status_code: int | None,
     limit: int,
 ) -> list[str]:
     """Collect the target list from the chosen source."""
@@ -59,7 +59,9 @@ def _resolve_targets(
             else:
                 resolved.append(val)
         if skipped:
-            console.print("[yellow]Skipping wildcards (run subfinder first to enumerate hosts):[/yellow]")
+            console.print(
+                "[yellow]Skipping wildcards (run subfinder first to enumerate hosts):[/yellow]"
+            )
             for s in skipped:
                 console.print(f"  [dim]skip:[/dim] {s}")
         return resolved
@@ -73,7 +75,9 @@ def _resolve_targets(
                 targets.append(val)
         return targets
 
-    console.print("[red]No target source specified.[/red] Use --scope, --from-recon, --target, or --targets.")
+    console.print(
+        "[red]No target source specified.[/red] Use --scope, --from-recon, --target, or --targets."
+    )
     raise typer.Exit(1)
 
 
@@ -95,20 +99,22 @@ def _confirm(targets: list[str], tool: str, yes: bool) -> None:
 
 def run_httpx(
     program_id: str,
-    scope: bool      = False,
+    scope: bool = False,
     from_recon: bool = False,
-    target: Optional[str]  = None,
-    targets_file: Optional[Path] = None,
-    limit: int       = 100,
-    status_code: Optional[int]  = None,
-    yes: bool        = False,
+    target: str | None = None,
+    targets_file: Path | None = None,
+    limit: int = 100,
+    status_code: int | None = None,
+    yes: bool = False,
 ):
     """Run httpx and upload results to VardrMap."""
     runner.check_tool("httpx")
     url, key = config.require_auth()
     client = api.VardrMapClient(url, key)
 
-    targets = _resolve_targets(client, program_id, scope, from_recon, target, targets_file, status_code, limit)
+    targets = _resolve_targets(
+        client, program_id, scope, from_recon, target, targets_file, status_code, limit
+    )
     if not targets:
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
@@ -116,7 +122,7 @@ def run_httpx(
     _confirm(targets, "httpx", yes)
 
     run_dir = _make_run_dir()
-    output  = run_dir / "httpx.jsonl"
+    output = run_dir / "httpx.jsonl"
     console.print(f"\nRunning httpx… output → [dim]{output}[/dim]")
 
     rc = runner.run_httpx(targets, output)
@@ -130,12 +136,12 @@ def run_httpx(
     console.print("Uploading results…")
     try:
         result = client.import_file(program_id, "httpx", str(output))
-        count  = result.get("import_record", {}).get("imported_count", "?")
+        count = result.get("import_record", {}).get("imported_count", "?")
         console.print(f"[green]Done.[/green] Imported {count} result(s).")
     except Exception as e:
         console.print(f"[red]Upload failed:[/red] {e}")
         console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def run_subfinder(
@@ -168,13 +174,15 @@ def run_subfinder(
         console.print(f"  {d}")
 
     if not yes:
-        confirmed = typer.confirm(f"\nRun subfinder against {len(domains)} domain(s)?", default=False)
+        confirmed = typer.confirm(
+            f"\nRun subfinder against {len(domains)} domain(s)?", default=False
+        )
         if not confirmed:
             console.print("[dim]Aborted.[/dim]")
             raise typer.Exit(0)
 
     run_dir = _make_run_dir()
-    output  = run_dir / "subfinder.txt"
+    output = run_dir / "subfinder.txt"
     console.print(f"\nRunning subfinder… output → [dim]{output}[/dim]")
 
     rc = runner.run_subfinder(domains, output)
@@ -190,6 +198,7 @@ def run_subfinder(
 
     # Convert plain hosts to httpx-compatible JSONL for import
     import json as _json
+
     jsonl_path = run_dir / "subfinder_httpx.jsonl"
     with jsonl_path.open("w") as fh:
         for host in hosts:
@@ -198,32 +207,34 @@ def run_subfinder(
     console.print("Uploading as httpx recon targets…")
     try:
         result = client.import_file(program_id, "httpx", str(jsonl_path))
-        count  = result.get("import_record", {}).get("imported_count", "?")
+        count = result.get("import_record", {}).get("imported_count", "?")
         console.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
     except Exception as e:
         console.print(f"[red]Upload failed:[/red] {e}")
         console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def run_nuclei(
     program_id: str,
-    scope: bool      = False,
+    scope: bool = False,
     from_recon: bool = False,
-    target: Optional[str]  = None,
-    targets_file: Optional[Path] = None,
-    limit: int       = 100,
-    status_code: Optional[int]  = None,
-    severity: Optional[str]     = None,
-    templates: Optional[str]    = None,
-    yes: bool        = False,
+    target: str | None = None,
+    targets_file: Path | None = None,
+    limit: int = 100,
+    status_code: int | None = None,
+    severity: str | None = None,
+    templates: str | None = None,
+    yes: bool = False,
 ):
     """Run nuclei and upload results to VardrMap."""
     runner.check_tool("nuclei")
     url, key = config.require_auth()
     client = api.VardrMapClient(url, key)
 
-    targets = _resolve_targets(client, program_id, scope, from_recon, target, targets_file, status_code, limit)
+    targets = _resolve_targets(
+        client, program_id, scope, from_recon, target, targets_file, status_code, limit
+    )
     if not targets:
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
@@ -231,8 +242,8 @@ def run_nuclei(
     _confirm(targets, "nuclei", yes)
 
     run_dir = _make_run_dir()
-    output  = run_dir / "nuclei.jsonl"
-    label   = f"severity={severity}" if severity else "all severities"
+    output = run_dir / "nuclei.jsonl"
+    label = f"severity={severity}" if severity else "all severities"
     console.print(f"\nRunning nuclei ({label})… output → [dim]{output}[/dim]")
 
     rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
@@ -246,9 +257,9 @@ def run_nuclei(
     console.print("Uploading results…")
     try:
         result = client.import_file(program_id, "nuclei", str(output))
-        count  = result.get("import_record", {}).get("imported_count", "?")
+        count = result.get("import_record", {}).get("imported_count", "?")
         console.print(f"[green]Done.[/green] Imported {count} finding(s).")
     except Exception as e:
         console.print(f"[red]Upload failed:[/red] {e}")
         console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

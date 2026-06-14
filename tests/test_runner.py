@@ -2,8 +2,7 @@
 Tests for the safe subprocess runner. Tools are mocked — we test argument
 construction and wildcard handling, not actual tool execution.
 """
-import shutil
-from pathlib import Path
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,25 +10,26 @@ import pytest
 from vardrrunner import runner
 from vardrrunner.commands.run import _is_wildcard, _resolve_targets
 
-
 # ---------------------------------------------------------------------------
 # Wildcard detection
 # ---------------------------------------------------------------------------
 
+
 def test_wildcard_detected():
     assert _is_wildcard("*.example.com") is True
-    assert _is_wildcard("*example.com")  is True
+    assert _is_wildcard("*example.com") is True
 
 
 def test_non_wildcard_passes():
-    assert _is_wildcard("app.example.com")          is False
-    assert _is_wildcard("https://api.example.com")  is False
-    assert _is_wildcard("192.168.1.1")              is False
+    assert _is_wildcard("app.example.com") is False
+    assert _is_wildcard("https://api.example.com") is False
+    assert _is_wildcard("192.168.1.1") is False
 
 
 # ---------------------------------------------------------------------------
 # tool_available
 # ---------------------------------------------------------------------------
+
 
 def test_tool_available_returns_false_for_unknown():
     assert runner.tool_available("notarealtool") is False
@@ -49,11 +49,14 @@ def test_tool_available_missing():
 # _resolve_targets — inline target
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_targets_inline():
     client = MagicMock()
     targets = _resolve_targets(
-        client, "prog-1",
-        scope=False, from_recon=False,
+        client,
+        "prog-1",
+        scope=False,
+        from_recon=False,
         target="https://example.com",
         targets_file=None,
         status_code=None,
@@ -68,13 +71,16 @@ def test_resolve_targets_inline():
 # _resolve_targets — targets file
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_targets_file(tmp_path):
     f = tmp_path / "targets.txt"
     f.write_text("https://a.com\nhttps://b.com\n")
     client = MagicMock()
     targets = _resolve_targets(
-        client, "prog-1",
-        scope=False, from_recon=False,
+        client,
+        "prog-1",
+        scope=False,
+        from_recon=False,
         target=None,
         targets_file=f,
         status_code=None,
@@ -85,11 +91,14 @@ def test_resolve_targets_file(tmp_path):
 
 def test_resolve_targets_file_missing_raises(tmp_path):
     import typer
+
     client = MagicMock()
     with pytest.raises(typer.Exit):
         _resolve_targets(
-            client, "prog-1",
-            scope=False, from_recon=False,
+            client,
+            "prog-1",
+            scope=False,
+            from_recon=False,
             target=None,
             targets_file=tmp_path / "missing.txt",
             status_code=None,
@@ -101,52 +110,62 @@ def test_resolve_targets_file_missing_raises(tmp_path):
 # _resolve_targets — scope (wildcards skipped)
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_targets_scope_skips_wildcards(capsys):
     client = MagicMock()
     client.scope.return_value = {
         "in": [
             {"value": "app.example.com", "kind": "domain"},
-            {"value": "*.example.com",   "kind": "domain"},
+            {"value": "*.example.com", "kind": "domain"},
             {"value": "api.example.com", "kind": "domain"},
         ],
         "out": [],
     }
     targets = _resolve_targets(
-        client, "prog-1",
-        scope=True, from_recon=False,
-        target=None, targets_file=None,
-        status_code=None, limit=100,
+        client,
+        "prog-1",
+        scope=True,
+        from_recon=False,
+        target=None,
+        targets_file=None,
+        status_code=None,
+        limit=100,
     )
     assert "app.example.com" in targets
     assert "api.example.com" in targets
-    assert "*.example.com"   not in targets
+    assert "*.example.com" not in targets
 
 
 # ---------------------------------------------------------------------------
 # _resolve_targets — from recon
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_targets_from_recon():
     client = MagicMock()
     client.recon.return_value = [
         {"url": "https://app.example.com", "host": "app.example.com"},
-        {"url": "",                          "host": "api.example.com"},
+        {"url": "", "host": "api.example.com"},
     ]
     targets = _resolve_targets(
-        client, "prog-1",
-        scope=False, from_recon=True,
-        target=None, targets_file=None,
+        client,
+        "prog-1",
+        scope=False,
+        from_recon=True,
+        target=None,
+        targets_file=None,
         status_code=200,
         limit=50,
     )
     client.recon.assert_called_once_with("prog-1", limit=50, status_code=200)
     assert "https://app.example.com" in targets
-    assert "api.example.com"         in targets
+    assert "api.example.com" in targets
 
 
 # ---------------------------------------------------------------------------
 # run_httpx / run_nuclei — subprocess is called with a list, not a shell string
 # ---------------------------------------------------------------------------
+
 
 def test_run_httpx_uses_arg_list(tmp_path):
     output = tmp_path / "out.jsonl"

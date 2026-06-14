@@ -15,18 +15,18 @@ def list_programs():
         programs = client.programs()
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if not programs:
         console.print("[dim]No programs found.[/dim]")
         return
 
     table = Table(show_header=True, header_style="bold dim")
-    table.add_column("ID",       style="dim", no_wrap=True)
-    table.add_column("Name",     style="bold")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Name", style="bold")
     table.add_column("Platform")
     table.add_column("Findings", justify="right")
-    table.add_column("Scans",    justify="right")
+    table.add_column("Scans", justify="right")
 
     for p in programs:
         table.add_row(
@@ -47,9 +47,9 @@ def show_scope(program_id: str):
         scope = client.scope(program_id)
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
-    in_scope  = scope.get("in", [])
+    in_scope = scope.get("in", [])
     out_scope = scope.get("out", [])
 
     if not in_scope and not out_scope:
