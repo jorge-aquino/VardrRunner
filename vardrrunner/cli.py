@@ -4,13 +4,15 @@ vardrrunner — local automation runner for the VardrSec product family.
 Part of the VardrMap project. Lives in runner/ and can be extracted to
 VardrSec/VardrRunner when it matures.
 """
+
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 
-from vardrrunner.commands import auth, daemon as daemon_cmd, heartbeat as heartbeat_cmd, imports, jobs, programs, run
+from vardrrunner.commands import auth, imports, jobs, programs, run
+from vardrrunner.commands import daemon as daemon_cmd
+from vardrrunner.commands import heartbeat as heartbeat_cmd
 from vardrrunner.commands import status as status_cmd
 
 console = Console()
@@ -51,6 +53,7 @@ def whoami():
 # Programs
 # --------------------------------------------------------------------------- #
 
+
 @app.command()
 def program_list():
     """List all programs in VardrMap."""
@@ -77,8 +80,8 @@ app.add_typer(import_app, name="import")
 
 @import_app.command("nuclei")
 def import_nuclei(
-    program_id: str  = typer.Option(..., "--program", "-p", help="Program UUID"),
-    file: Path       = typer.Option(..., "--file",    "-f", help="Path to nuclei JSONL output"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    file: Path = typer.Option(..., "--file", "-f", help="Path to nuclei JSONL output"),
 ):
     """Import a nuclei output file."""
     imports.import_file("nuclei", program_id, file)
@@ -86,8 +89,8 @@ def import_nuclei(
 
 @import_app.command("httpx")
 def import_httpx(
-    program_id: str  = typer.Option(..., "--program", "-p", help="Program UUID"),
-    file: Path       = typer.Option(..., "--file",    "-f", help="Path to httpx JSON/JSONL output"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    file: Path = typer.Option(..., "--file", "-f", help="Path to httpx JSON/JSONL output"),
 ):
     """Import an httpx output file."""
     imports.import_file("httpx", program_id, file)
@@ -95,8 +98,8 @@ def import_httpx(
 
 @import_app.command("ffuf")
 def import_ffuf(
-    program_id: str  = typer.Option(..., "--program", "-p", help="Program UUID"),
-    file: Path       = typer.Option(..., "--file",    "-f", help="Path to ffuf JSON output"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    file: Path = typer.Option(..., "--file", "-f", help="Path to ffuf JSON output"),
 ):
     """Import an ffuf output file."""
     imports.import_file("ffuf", program_id, file)
@@ -114,16 +117,20 @@ def import_ffuf(
 # Daemon
 # --------------------------------------------------------------------------- #
 
-daemon_app = typer.Typer(help="Long-running background worker: polls jobs and sends heartbeats.", no_args_is_help=True)
+daemon_app = typer.Typer(
+    help="Long-running background worker: polls jobs and sends heartbeats.", no_args_is_help=True
+)
 app.add_typer(daemon_app, name="daemon")
 
 
 @daemon_app.command("start")
 def daemon_start(
-    detach: bool           = typer.Option(False, "--detach", "-d", help="Run in background"),
-    poll_interval: int     = typer.Option(5,  "--poll-interval",    help="Seconds between job polls"),
-    heartbeat_interval: int = typer.Option(60, "--heartbeat-interval", help="Seconds between heartbeats"),
-    log_file: Optional[Path] = typer.Option(None, "--log-file",       help="Append output to file"),
+    detach: bool = typer.Option(False, "--detach", "-d", help="Run in background"),
+    poll_interval: int = typer.Option(5, "--poll-interval", help="Seconds between job polls"),
+    heartbeat_interval: int = typer.Option(
+        60, "--heartbeat-interval", help="Seconds between heartbeats"
+    ),
+    log_file: Path | None = typer.Option(None, "--log-file", help="Append output to file"),
 ):
     """Start the daemon (foreground by default, use --detach for background)."""
     daemon_cmd.start(
@@ -172,20 +179,26 @@ def jobs_run(
 # Run
 # --------------------------------------------------------------------------- #
 
-run_app = typer.Typer(help="Run a tool locally and upload results to VardrMap.", no_args_is_help=True)
+run_app = typer.Typer(
+    help="Run a tool locally and upload results to VardrMap.", no_args_is_help=True
+)
 app.add_typer(run_app, name="run")
 
 
 @run_app.command("httpx")
 def run_httpx(
-    program_id:   str           = typer.Option(...,  "--program",  "-p",  help="Program UUID"),
-    scope:        bool          = typer.Option(False, "--scope",           help="Use in-scope assets from VardrMap"),
-    from_recon:   bool          = typer.Option(False, "--from-recon",      help="Use live recon items from VardrMap"),
-    target:       Optional[str] = typer.Option(None,  "--target",          help="Single inline target"),
-    targets_file: Optional[Path]= typer.Option(None,  "--targets",         help="Path to a targets .txt file"),
-    limit:        int           = typer.Option(100,   "--limit",           help="Max recon items to use (--from-recon only)"),
-    status_code:  Optional[int] = typer.Option(None,  "--status-code",     help="Filter recon by HTTP status code"),
-    yes:          bool          = typer.Option(False, "--yes",    "-y",    help="Skip confirmation prompt"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    scope: bool = typer.Option(False, "--scope", help="Use in-scope assets from VardrMap"),
+    from_recon: bool = typer.Option(
+        False, "--from-recon", help="Use live recon items from VardrMap"
+    ),
+    target: str | None = typer.Option(None, "--target", help="Single inline target"),
+    targets_file: Path | None = typer.Option(None, "--targets", help="Path to a targets .txt file"),
+    limit: int = typer.Option(100, "--limit", help="Max recon items to use (--from-recon only)"),
+    status_code: int | None = typer.Option(
+        None, "--status-code", help="Filter recon by HTTP status code"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """Run httpx locally and upload results to VardrMap."""
     run.run_httpx(
@@ -202,8 +215,8 @@ def run_httpx(
 
 @run_app.command("subfinder")
 def run_subfinder(
-    program_id: str  = typer.Option(..., "--program", "-p",  help="Program UUID"),
-    yes:        bool = typer.Option(False, "--yes",   "-y",  help="Skip confirmation prompt"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """Run subfinder against wildcard scope entries and import discovered hosts."""
     run.run_subfinder(program_id=program_id, yes=yes)
@@ -211,16 +224,24 @@ def run_subfinder(
 
 @run_app.command("nuclei")
 def run_nuclei(
-    program_id:   str           = typer.Option(...,  "--program",  "-p",  help="Program UUID"),
-    scope:        bool          = typer.Option(False, "--scope",           help="Use in-scope assets from VardrMap"),
-    from_recon:   bool          = typer.Option(False, "--from-recon",      help="Use live recon items from VardrMap"),
-    target:       Optional[str] = typer.Option(None,  "--target",          help="Single inline target"),
-    targets_file: Optional[Path]= typer.Option(None,  "--targets",         help="Path to a targets .txt file"),
-    limit:        int           = typer.Option(100,   "--limit",           help="Max recon items to use (--from-recon only)"),
-    status_code:  Optional[int] = typer.Option(None,  "--status-code",     help="Filter recon by HTTP status code"),
-    severity:     Optional[str] = typer.Option(None,  "--severity",        help="Comma-separated severities, e.g. high,critical"),
-    templates:    Optional[str] = typer.Option(None,  "--templates",  "-t",help="Nuclei template path or tag"),
-    yes:          bool          = typer.Option(False, "--yes",    "-y",    help="Skip confirmation prompt"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    scope: bool = typer.Option(False, "--scope", help="Use in-scope assets from VardrMap"),
+    from_recon: bool = typer.Option(
+        False, "--from-recon", help="Use live recon items from VardrMap"
+    ),
+    target: str | None = typer.Option(None, "--target", help="Single inline target"),
+    targets_file: Path | None = typer.Option(None, "--targets", help="Path to a targets .txt file"),
+    limit: int = typer.Option(100, "--limit", help="Max recon items to use (--from-recon only)"),
+    status_code: int | None = typer.Option(
+        None, "--status-code", help="Filter recon by HTTP status code"
+    ),
+    severity: str | None = typer.Option(
+        None, "--severity", help="Comma-separated severities, e.g. high,critical"
+    ),
+    templates: str | None = typer.Option(
+        None, "--templates", "-t", help="Nuclei template path or tag"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
     """Run nuclei locally and upload results to VardrMap."""
     run.run_nuclei(

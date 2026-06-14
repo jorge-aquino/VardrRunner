@@ -2,7 +2,8 @@
 Thin wrapper around requests for authenticated calls to the VardrMap API.
 All methods raise requests.HTTPError on non-2xx responses.
 """
-from typing import Any, Optional
+
+from typing import Any
 
 import requests
 
@@ -16,12 +17,18 @@ class VardrMapClient:
     def _url(self, path: str) -> str:
         return f"{self.base}/{path.lstrip('/')}"
 
-    def get(self, path: str, params: Optional[dict] = None) -> Any:
+    def get(self, path: str, params: dict | None = None) -> Any:
         r = self.session.get(self._url(path), params=params, timeout=30)
         r.raise_for_status()
         return r.json()
 
-    def post(self, path: str, json: Optional[dict] = None, files: Optional[dict] = None, data: Optional[dict] = None) -> Any:
+    def post(
+        self,
+        path: str,
+        json: dict | None = None,
+        files: dict | None = None,
+        data: dict | None = None,
+    ) -> Any:
         r = self.session.post(self._url(path), json=json, files=files, data=data, timeout=60)
         r.raise_for_status()
         return r.json()
@@ -39,7 +46,9 @@ class VardrMapClient:
         """Returns {"in": [...], "out": [...]} scope lists."""
         return self.program(program_id).get("scope", {"in": [], "out": []})
 
-    def recon(self, program_id: str, limit: int = 100, status_code: Optional[int] = None) -> list[dict]:
+    def recon(
+        self, program_id: str, limit: int = 100, status_code: int | None = None
+    ) -> list[dict]:
         params: dict = {"limit": limit, "offset": 0}
         if status_code is not None:
             params["status_code"] = status_code
@@ -72,7 +81,7 @@ class VardrMapClient:
             payload["error_message"] = error
         return self.patch(f"/jobs/{job_id}", json=payload)
 
-    def patch(self, path: str, json: Optional[dict] = None) -> Any:
+    def patch(self, path: str, json: dict | None = None) -> Any:
         r = self.session.patch(self._url(path), json=json, timeout=30)
         r.raise_for_status()
         return r.json()

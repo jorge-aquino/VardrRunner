@@ -59,17 +59,19 @@ Documentation-only, test-only, and pure-refactor commits may note
 
 ## Verification before commit
 ```
-# from repo root, in the activated venv
-.\venv\Scripts\pytest.exe tests -q     # all 113 must pass
-python -m pyflakes vardrrunner         # or ruff, once adopted
+# from repo root, in the activated venv — mirrors CI
+ruff check vardrrunner tests           # lint
+ruff format --check vardrrunner tests  # formatting
+mypy vardrrunner                       # type check
+pytest tests --cov=vardrrunner --cov-fail-under=60   # all 113 must pass
 ```
+Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
 
 ## Running locally
 ```
 python -m venv venv
 .\venv\Scripts\Activate.ps1     # Windows
-pip install -e .                # installs the `vardrrunner` command
-pip install pytest              # dev dependency
+pip install -e ".[dev]"         # installs the `vardrrunner` command + dev tools
 
 vardrrunner login vardrmap      # stores api_url + api_key in ~/.vardrmap/config.json
 vardrrunner heartbeat           # confirm connectivity

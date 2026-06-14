@@ -13,7 +13,9 @@ SUPPORTED_TOOLS = ["nuclei", "httpx", "ffuf"]
 def import_file(tool: str, program_id: str, file: Path):
     """Upload a tool output file directly to VardrMap without running the tool."""
     if tool not in SUPPORTED_TOOLS:
-        console.print(f"[red]Unsupported tool:[/red] {tool}. Supported: {', '.join(SUPPORTED_TOOLS)}")
+        console.print(
+            f"[red]Unsupported tool:[/red] {tool}. Supported: {', '.join(SUPPORTED_TOOLS)}"
+        )
         raise typer.Exit(1)
 
     if not file.exists():
@@ -26,8 +28,10 @@ def import_file(tool: str, program_id: str, file: Path):
         result = client.import_file(program_id, tool, str(file))
     except Exception as e:
         console.print(f"[red]Import failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     record = result.get("import_record", {})
-    count  = record.get("imported_count", "?")
-    console.print(f"[green]Imported[/green] {count} {tool} result(s) into program [bold]{program_id}[/bold]")
+    count = record.get("imported_count", "?")
+    console.print(
+        f"[green]Imported[/green] {count} {tool} result(s) into program [bold]{program_id}[/bold]"
+    )

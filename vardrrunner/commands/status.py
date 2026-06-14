@@ -4,6 +4,7 @@ vardrrunner status — show whether the local runner is ready to work.
 Checks config, API connectivity, and local tool availability without
 crashing on missing config or network errors.
 """
+
 import requests
 from rich.console import Console
 from rich.table import Table
@@ -12,7 +13,7 @@ from vardrrunner import api, config, runner
 
 console = Console()
 
-_OK   = "[green]  OK  [/green]"
+_OK = "[green]  OK  [/green]"
 _FAIL = "[red]  FAIL[/red]"
 _WARN = "[yellow]  WARN[/yellow]"
 
@@ -34,9 +35,9 @@ def run_status() -> None:
     # Config
     # ------------------------------------------------------------------
     config_table = Table(show_header=False, box=None, padding=(0, 1))
-    _row(config_table, config_exists,      "Config file found")
-    _row(config_table, bool(api_url),      "API URL configured")
-    _row(config_table, bool(api_key),      "API key configured")
+    _row(config_table, config_exists, "Config file found")
+    _row(config_table, bool(api_url), "API URL configured")
+    _row(config_table, bool(api_key), "API key configured")
     console.print()
     console.print("[bold]Config[/bold]")
     console.print(config_table)
@@ -71,7 +72,11 @@ def run_status() -> None:
         try:
             programs = client.programs()
             program_count = len(programs)
-            _row(conn_table, True, f"{program_count} program{'s' if program_count != 1 else ''} available")
+            _row(
+                conn_table,
+                True,
+                f"{program_count} program{'s' if program_count != 1 else ''} available",
+            )
         except requests.HTTPError as e:
             status_code = e.response.status_code if e.response is not None else "?"
             _row(conn_table, False, f"Could not fetch programs (HTTP {status_code})")

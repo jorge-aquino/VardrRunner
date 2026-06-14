@@ -1,8 +1,8 @@
 """Tests for nmap integration: runner functions and job dispatch.
 All subprocess and HTTP calls are mocked.
 """
+
 import textwrap
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,10 +10,10 @@ import pytest
 from vardrrunner import runner
 from vardrrunner.commands import jobs as jobs_cmd
 
-
 # ---------------------------------------------------------------------------
 # runner.run_nmap — subprocess args
 # ---------------------------------------------------------------------------
+
 
 def test_run_nmap_uses_safe_arg_list(tmp_path):
     output = tmp_path / "nmap.xml"
@@ -159,8 +159,10 @@ def test_parse_nmap_xml_falls_back_to_ip(tmp_path):
 # api.create_services
 # ---------------------------------------------------------------------------
 
+
 def test_client_create_services():
     from vardrrunner.api import VardrMapClient
+
     client = VardrMapClient("http://api", "key")
     svcs = [{"host": "10.0.0.1", "port": 80, "protocol": "tcp"}]
     with patch.object(client, "post", return_value={"created": 1, "updated": 0}) as mock_post:
@@ -173,13 +175,16 @@ def test_client_create_services():
 # jobs.run_jobs — nmap dispatch
 # ---------------------------------------------------------------------------
 
+
 def test_run_nmap_job_dispatches_and_uploads(tmp_path):
     xml_path = tmp_path / "nmap.xml"
     xml_path.write_text(_NMAP_XML)
 
     job = {
-        "id": "job-nmap-1", "program_id": "prog-1",
-        "tool_type": "nmap", "target_source": "scope",
+        "id": "job-nmap-1",
+        "program_id": "prog-1",
+        "tool_type": "nmap",
+        "target_source": "scope",
         "config": {"top_ports": 100, "timing": 3},
     }
 
@@ -188,15 +193,28 @@ def test_run_nmap_job_dispatches_and_uploads(tmp_path):
     client.scope.return_value = {"in": [{"value": "10.0.0.1"}], "out": []}
     client.create_services.return_value = {"created": 2, "updated": 0}
 
-    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
-         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
-         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True), \
-         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path), \
-         patch("vardrrunner.commands.jobs.runner.run_nmap", return_value=0), \
-         patch("vardrrunner.commands.jobs.runner.parse_nmap_xml",
-               return_value=[{"host": "10.0.0.1", "port": 80, "protocol": "tcp",
-                               "service_name": "http", "product": "", "version": "",
-                               "state": "open", "source": "nmap"}]):
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.commands.jobs.runner.run_nmap", return_value=0),
+        patch(
+            "vardrrunner.commands.jobs.runner.parse_nmap_xml",
+            return_value=[
+                {
+                    "host": "10.0.0.1",
+                    "port": 80,
+                    "protocol": "tcp",
+                    "service_name": "http",
+                    "product": "",
+                    "version": "",
+                    "state": "open",
+                    "source": "nmap",
+                }
+            ],
+        ),
+    ):
         jobs_cmd.run_jobs(yes=True)
 
     client.claim_job.assert_called_once_with("job-nmap-1")
@@ -207,8 +225,10 @@ def test_run_nmap_job_dispatches_and_uploads(tmp_path):
 def test_run_nmap_job_no_open_ports_marks_done(tmp_path):
     """If parse_nmap_xml returns empty, job completes as done without calling create_services."""
     job = {
-        "id": "job-nmap-2", "program_id": "prog-1",
-        "tool_type": "nmap", "target_source": "scope",
+        "id": "job-nmap-2",
+        "program_id": "prog-1",
+        "tool_type": "nmap",
+        "target_source": "scope",
         "config": {},
     }
     # Write a minimal xml file so the "file exists" check passes
@@ -218,12 +238,14 @@ def test_run_nmap_job_no_open_ports_marks_done(tmp_path):
     client.pending_jobs.return_value = [job]
     client.scope.return_value = {"in": [{"value": "10.0.0.1"}], "out": []}
 
-    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
-         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
-         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True), \
-         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path), \
-         patch("vardrrunner.commands.jobs.runner.run_nmap", return_value=0), \
-         patch("vardrrunner.commands.jobs.runner.parse_nmap_xml", return_value=[]):
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.commands.jobs.runner.run_nmap", return_value=0),
+        patch("vardrrunner.commands.jobs.runner.parse_nmap_xml", return_value=[]),
+    ):
         jobs_cmd.run_jobs(yes=True)
 
     client.create_services.assert_not_called()
@@ -234,16 +256,20 @@ def test_run_nmap_job_no_open_ports_marks_done(tmp_path):
 # runner.strip_url_to_host
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("input_url,expected", [
-    ("https://app.example.com/path",  "app.example.com"),
-    ("https://app.example.com",       "app.example.com"),
-    ("http://10.0.0.1:8080",          "10.0.0.1"),
-    ("http://10.0.0.1:8080/api/v1",   "10.0.0.1"),
-    ("app.example.com",               "app.example.com"),
-    ("10.0.0.1",                      "10.0.0.1"),
-    ("sub.example.com/path",          "sub.example.com"),
-    ("https://EXAMPLE.COM/page",      "example.com"),      # hostname lowercased
-])
+
+@pytest.mark.parametrize(
+    "input_url,expected",
+    [
+        ("https://app.example.com/path", "app.example.com"),
+        ("https://app.example.com", "app.example.com"),
+        ("http://10.0.0.1:8080", "10.0.0.1"),
+        ("http://10.0.0.1:8080/api/v1", "10.0.0.1"),
+        ("app.example.com", "app.example.com"),
+        ("10.0.0.1", "10.0.0.1"),
+        ("sub.example.com/path", "sub.example.com"),
+        ("https://EXAMPLE.COM/page", "example.com"),  # hostname lowercased
+    ],
+)
 def test_strip_url_to_host(input_url, expected):
     assert runner.strip_url_to_host(input_url) == expected
 
@@ -260,12 +286,15 @@ def test_strip_url_to_host_whitespace():
 # jobs.run_jobs — nmap strips URLs before passing to run_nmap
 # ---------------------------------------------------------------------------
 
+
 def test_run_nmap_job_strips_url_targets(tmp_path):
     """Verify that URL targets (https://...) are normalized to hostnames before nmap."""
     (tmp_path / "nmap.xml").write_text(_NMAP_XML)
     job = {
-        "id": "job-nmap-3", "program_id": "prog-1",
-        "tool_type": "nmap", "target_source": "recon",
+        "id": "job-nmap-3",
+        "program_id": "prog-1",
+        "tool_type": "nmap",
+        "target_source": "recon",
         "config": {"top_ports": 50, "timing": 2},
     }
 
@@ -279,14 +308,18 @@ def test_run_nmap_job_strips_url_targets(tmp_path):
         captured_targets.extend(targets)
         return 0
 
-    with patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")), \
-         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client), \
-         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True), \
-         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path), \
-         patch("vardrrunner.commands.jobs._resolve_targets",
-               return_value=["https://app.example.com/path", "http://10.0.0.2:8080/api"]), \
-         patch("vardrrunner.commands.jobs.runner.run_nmap", side_effect=fake_run_nmap), \
-         patch("vardrrunner.commands.jobs.runner.parse_nmap_xml", return_value=[]):
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch(
+            "vardrrunner.commands.jobs._resolve_targets",
+            return_value=["https://app.example.com/path", "http://10.0.0.2:8080/api"],
+        ),
+        patch("vardrrunner.commands.jobs.runner.run_nmap", side_effect=fake_run_nmap),
+        patch("vardrrunner.commands.jobs.runner.parse_nmap_xml", return_value=[]),
+    ):
         jobs_cmd.run_jobs(yes=True)
 
     assert "app.example.com" in captured_targets

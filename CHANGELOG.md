@@ -6,14 +6,27 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+
+## [0.18.0] — 2026-06-14
+First release from the standalone repository. See
+[changelog/v0.18.0.md](changelog/v0.18.0.md) for detail.
+
 ### Changed
 - Extracted VardrRunner into its own repository from the VardrMap monorepo, preserving
   full commit history via `git subtree split`. See
   [docs/adr/0001-extract-vardrrunner-from-vardrmap.md](docs/adr/0001-extract-vardrrunner-from-vardrmap.md).
+- **Corrected the package version** from a misleading `0.1.0` to `0.18.0` (the package
+  already carried v0.17.x of features). Version is now single-sourced from
+  `vardrrunner/__init__.py` and read dynamically by `pyproject.toml`; the heartbeat reports it.
+- Replaced `pyflakes` with **ruff** (lint + format) and added **mypy** type checking; all
+  three plus coverage now run in CI on Python 3.10–3.12.
+
 ### Added
 - Standalone repo scaffolding: `CLAUDE.md` (with the shared VardrSec Engineering Charter),
   `README.md`, `docs/` (architecture, development, CLI reference, ADRs), `changelog/`,
   CI workflow, and `.gitignore`.
+- `LICENSE` (MIT).
+- `[project.optional-dependencies] dev` extra in `pyproject.toml` — `pip install -e ".[dev]"`.
 
 ---
 

@@ -18,13 +18,13 @@ python -m venv venv
 # macOS / Linux
 source venv/bin/activate
 
-pip install -e .        # editable install; exposes the `vardrrunner` command
-pip install pytest      # dev dependency
+pip install -e ".[dev]"  # editable install + dev tools (pytest, ruff, mypy)
 ```
 
 ## Running the test suite
 ```bash
-pytest tests -q
+pytest tests                                          # quick run
+pytest tests --cov=vardrrunner --cov-report=term-missing   # with coverage (as CI runs it)
 ```
 - **113 tests**, all hermetic: no network, no real subprocesses, no real filesystem state
   outside temp dirs.
@@ -43,12 +43,18 @@ pytest tests -q
 | `tests/test_nmap.py` | nmap target normalization + profile |
 | `tests/test_status.py` | tool detection + status output |
 
-## Linting
-Until a linter is standardized in CI, run a quick static check before committing:
+## Lint, format, and types
+CI enforces all three on every push; run them locally before committing:
 ```bash
-python -m pyflakes vardrrunner
+ruff check vardrrunner tests           # lint
+ruff format --check vardrrunner tests  # formatting
+mypy vardrrunner                       # type check
 ```
-The intended direction is to adopt **ruff** (lint + format) — when added, CI will enforce it.
+Autofix most issues with:
+```bash
+ruff check --fix vardrrunner tests && ruff format vardrrunner tests
+```
+Config lives in `pyproject.toml` (`[tool.ruff]`, `[tool.mypy]`).
 
 ## Branch & commit workflow
 1. Branch off `main` for any non-trivial change.
@@ -59,7 +65,8 @@ The intended direction is to adopt **ruff** (lint + format) — when added, CI w
 6. Open a PR; CI must pass before merge.
 
 ## Releasing
-1. Bump `__version__` in `vardrrunner/__init__.py` and `version` in `pyproject.toml`.
+1. Bump `__version__` in `vardrrunner/__init__.py` — the **single source of truth**
+   (`pyproject.toml` reads it dynamically). The heartbeat reports this version to the backend.
 2. Move `Unreleased` notes into a dated version section in `CHANGELOG.md`; add a
    `changelog/vX.Y.Z.md` detail note.
 3. Tag the release (`git tag vX.Y.Z`).

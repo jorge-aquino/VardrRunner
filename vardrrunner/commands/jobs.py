@@ -4,8 +4,8 @@ Job queue commands: list pending jobs and run them locally.
 The UI creates job records; VardrRunner polls /jobs/pending, executes
 the tool locally, and uploads results via the existing import endpoint.
 """
+
 import json
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -29,10 +29,10 @@ def list_jobs() -> None:
         raise typer.Exit(0)
 
     table = Table(title="Pending Scan Jobs")
-    table.add_column("ID",      style="dim", no_wrap=True)
-    table.add_column("Tool",    style="bold")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Tool", style="bold")
     table.add_column("Source")
-    table.add_column("Config",  style="dim")
+    table.add_column("Config", style="dim")
     table.add_column("Created")
 
     for j in jobs:
@@ -69,11 +69,11 @@ def execute_pending_jobs(
     con.print(f"Found [bold]{len(jobs_list)}[/bold] pending job(s).")
 
     for job in jobs_list:
-        job_id     = job["id"]
-        tool_type  = job["tool_type"]
+        job_id = job["id"]
+        tool_type = job["tool_type"]
         target_src = job["target_source"]
         program_id = job["program_id"]
-        cfg        = job.get("config") or {}
+        cfg = job.get("config") or {}
 
         con.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
 
@@ -117,9 +117,11 @@ def execute_pending_jobs(
                 continue
 
             _emit(client, job_id, "started", f"claimed job · {len(domains)} domain(s) to enumerate")
-            _emit(client, job_id, "targets_resolved", f"{len(domains)} wildcard domain(s) from scope")
+            _emit(
+                client, job_id, "targets_resolved", f"{len(domains)} wildcard domain(s) from scope"
+            )
 
-            run_dir   = _make_run_dir()
+            run_dir = _make_run_dir()
             sf_output = run_dir / "subfinder.txt"
             con.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
             _emit(client, job_id, "running", f"running subfinder on {len(domains)} domain(s)")
@@ -144,7 +146,7 @@ def execute_pending_jobs(
             con.print("Uploading as httpx recon targets…")
             try:
                 result = client.import_file(program_id, "httpx", str(jsonl_path))
-                count  = result.get("import_record", {}).get("imported_count", "?")
+                count = result.get("import_record", {}).get("imported_count", "?")
                 con.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
                 _emit(client, job_id, "uploaded", f"imported {count} subdomain(s) as recon targets")
                 client.complete_job(job_id, "done")
@@ -159,7 +161,7 @@ def execute_pending_jobs(
         # ── nmap: service discovery — XML output → services API ──────────────
         if tool_type == "nmap":
             try:
-                status_code_filter: Optional[int] = None
+                status_code_filter: int | None = None
                 limit_n: int = int(cfg.get("limit", 500))
                 targets = _resolve_targets(
                     client=client,
@@ -191,19 +193,31 @@ def execute_pending_jobs(
                 con.print(f"[red]Could not claim job:[/red] {e}")
                 continue
 
-            _emit(client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}")
+            _emit(
+                client,
+                job_id,
+                "started",
+                f"claimed job · {len(targets)} target(s) from {target_src}",
+            )
             _emit(client, job_id, "targets_resolved", f"{len(targets)} target(s) from {target_src}")
 
             top_ports = int(cfg.get("top_ports", 100))
-            timing    = int(cfg.get("timing", 3))
-            run_dir   = _make_run_dir()
-            xml_path  = run_dir / "nmap.xml"
+            timing = int(cfg.get("timing", 3))
+            run_dir = _make_run_dir()
+            xml_path = run_dir / "nmap.xml"
 
             nmap_targets = [runner.strip_url_to_host(t) for t in targets if t.strip()]
             nmap_targets = list(dict.fromkeys(nmap_targets))
 
-            con.print(f"Running nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]")
-            _emit(client, job_id, "running", f"running nmap --top-ports {top_ports} against {len(nmap_targets)} target(s)")
+            con.print(
+                f"Running nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]"
+            )
+            _emit(
+                client,
+                job_id,
+                "running",
+                f"running nmap --top-ports {top_ports} against {len(nmap_targets)} target(s)",
+            )
 
             try:
                 rc = runner.run_nmap(nmap_targets, xml_path, top_ports=top_ports, timing=timing)
@@ -224,7 +238,9 @@ def execute_pending_jobs(
                     created = result.get("created", 0)
                     updated = result.get("updated", 0)
                     con.print(f"[green]Done.[/green] {created} new, {updated} updated service(s).")
-                    _emit(client, job_id, "uploaded", f"{created} new, {updated} updated service(s)")
+                    _emit(
+                        client, job_id, "uploaded", f"{created} new, {updated} updated service(s)"
+                    )
                 else:
                     con.print("[yellow]No open ports found.[/yellow]")
                     _emit(client, job_id, "uploaded", "no open ports found")
@@ -241,7 +257,7 @@ def execute_pending_jobs(
 
         # ── httpx / nuclei: shared target resolution ──────────────────────────
         try:
-            status_code: Optional[int] = cfg.get("status_code")
+            status_code: int | None = cfg.get("status_code")
             limit: int = int(cfg.get("limit", 100))
             targets = _resolve_targets(
                 client=client,
@@ -273,10 +289,12 @@ def execute_pending_jobs(
             con.print(f"[red]Could not claim job:[/red] {e}")
             continue
 
-        _emit(client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}")
+        _emit(
+            client, job_id, "started", f"claimed job · {len(targets)} target(s) from {target_src}"
+        )
         _emit(client, job_id, "targets_resolved", f"{len(targets)} target(s) from {target_src}")
 
-        run_dir   = _make_run_dir()
+        run_dir = _make_run_dir()
         error_msg = ""
         try:
             if tool_type == "httpx":
@@ -286,15 +304,21 @@ def execute_pending_jobs(
                 rc = runner.run_httpx(targets, output)
             else:  # nuclei
                 output = run_dir / "nuclei.jsonl"
-                severity      = cfg.get("severity")
+                severity = cfg.get("severity")
                 raw_templates = cfg.get("templates")
                 templates = (
-                    ",".join(raw_templates) if isinstance(raw_templates, list)
+                    ",".join(raw_templates)
+                    if isinstance(raw_templates, list)
                     else (raw_templates or None)
                 )
                 label = f"severity={severity}" if severity else "all"
                 con.print(f"Running nuclei ({label})… output → [dim]{output}[/dim]")
-                _emit(client, job_id, "running", f"running nuclei ({label}) against {len(targets)} target(s)")
+                _emit(
+                    client,
+                    job_id,
+                    "running",
+                    f"running nuclei ({label}) against {len(targets)} target(s)",
+                )
                 rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
 
             if rc != 0:
@@ -308,7 +332,7 @@ def execute_pending_jobs(
 
             con.print("Uploading results…")
             result = client.import_file(program_id, tool_type, str(output))
-            count  = result.get("import_record", {}).get("imported_count", "?")
+            count = result.get("import_record", {}).get("imported_count", "?")
             con.print(f"[green]Done.[/green] Imported {count} result(s).")
             _emit(client, job_id, "uploaded", f"imported {count} result(s)")
             client.complete_job(job_id, "done")

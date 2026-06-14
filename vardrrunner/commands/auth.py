@@ -30,12 +30,16 @@ def login_vardrmap(
         user = client.whoami()
     except Exception as e:
         console.print(f"[red]Authentication failed:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     config.save({"api_url": api_url, "api_key": api_key})
-    console.print(f"[green]Logged in[/green] as [bold]{user.get('username') or user.get('github_id')}[/bold]")
+    console.print(
+        f"[green]Logged in[/green] as [bold]{user.get('username') or user.get('github_id')}[/bold]"
+    )
     console.print(f"Config saved to [dim]{config.CONFIG_FILE}[/dim]")
-    console.print("[yellow]Treat this file like a secret — it contains your API key in plaintext.[/yellow]")
+    console.print(
+        "[yellow]Treat this file like a secret — it contains your API key in plaintext.[/yellow]"
+    )
 
 
 def whoami():
@@ -46,11 +50,11 @@ def whoami():
         user = client.whoami()
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_row("[dim]GitHub ID[/dim]",  str(user.get("github_id", "—")))
-    table.add_row("[dim]Username[/dim]",   str(user.get("username", "—")))
-    table.add_row("[dim]Email[/dim]",      str(user.get("email", "—")))
-    table.add_row("[dim]API URL[/dim]",    url)
+    table.add_row("[dim]GitHub ID[/dim]", str(user.get("github_id", "—")))
+    table.add_row("[dim]Username[/dim]", str(user.get("username", "—")))
+    table.add_row("[dim]Email[/dim]", str(user.get("email", "—")))
+    table.add_row("[dim]API URL[/dim]", url)
     console.print(table)
