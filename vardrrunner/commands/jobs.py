@@ -5,7 +5,6 @@ The UI creates job records; VardrRunner polls /jobs/pending, executes
 the tool locally, and uploads results via the existing import endpoint.
 """
 import json
-from pathlib import Path
 from typing import Optional
 
 import typer

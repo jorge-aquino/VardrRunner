@@ -130,7 +130,7 @@ def run_nmap(targets: list[str], output_path: Path, top_ports: int = 100, timing
     cmd = [
         ALLOWED_TOOLS["nmap"],
         "-iL", targets_file,
-        f"--top-ports", str(top_ports),
+        "--top-ports", str(top_ports),
         "-sV", "--version-intensity", "2",
         f"-T{safe_timing}",
         "-oX", str(output_path),

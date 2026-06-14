@@ -3,7 +3,6 @@ Config is stored at ~/.vardrmap/config.json.
 Treat this file like a secret — it contains your API key in plaintext.
 """
 import json
-import os
 import stat
 from pathlib import Path
 from typing import Optional
