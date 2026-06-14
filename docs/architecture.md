@@ -23,7 +23,7 @@ either direction.
 | Path | Responsibility |
 |------|----------------|
 | `vardrrunner/cli.py` | Typer application; defines command groups and wires them together. Thin — delegates to `commands/`. |
-| `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. |
+| `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. Retries transient failures (connection errors, 429/5xx) with exponential backoff on idempotent methods only (never POST/PATCH); sends a `User-Agent: vardrrunner/<version>` header. |
 | `vardrrunner/config.py` | Read/write `~/.vardrmap/config.json` (`api_url`, `api_key`); restricts file permissions; `require_auth()` guards commands. |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
