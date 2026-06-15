@@ -3,6 +3,8 @@ Tests for the safe subprocess runner. Tools are mocked — we test argument
 construction and wildcard handling, not actual tool execution.
 """
 
+import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -187,3 +189,48 @@ def test_run_nuclei_uses_arg_list(tmp_path):
         assert args[0] == "nuclei"
         assert "-severity" in args
         assert "high,critical" in args
+
+
+# ---------------------------------------------------------------------------
+# Tool timeouts
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_timeout_override_wins(monkeypatch):
+    monkeypatch.setenv("VARDRRUNNER_TOOL_TIMEOUT", "100")
+    assert runner._resolve_timeout(42) == 42
+
+
+def test_resolve_timeout_uses_env_when_no_override(monkeypatch):
+    monkeypatch.setenv("VARDRRUNNER_TOOL_TIMEOUT", "123")
+    assert runner._resolve_timeout(None) == 123
+
+
+def test_resolve_timeout_default(monkeypatch):
+    monkeypatch.delenv("VARDRRUNNER_TOOL_TIMEOUT", raising=False)
+    assert runner._resolve_timeout(None) == runner.DEFAULT_TOOL_TIMEOUT
+
+
+def test_resolve_timeout_invalid_env_falls_back(monkeypatch):
+    monkeypatch.setenv("VARDRRUNNER_TOOL_TIMEOUT", "not-a-number")
+    assert runner._resolve_timeout(None) == runner.DEFAULT_TOOL_TIMEOUT
+
+
+def test_run_forwards_timeout_to_subprocess(tmp_path):
+    output = tmp_path / "out.jsonl"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        runner.run_httpx(["https://example.com"], output, timeout=42)
+        assert mock_run.call_args.kwargs["timeout"] == 42
+
+
+def test_run_raises_tooltimeout_and_cleans_up(tmp_path):
+    output = tmp_path / "out.jsonl"
+    with patch(
+        "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="httpx", timeout=1)
+    ) as mock_run:
+        with pytest.raises(runner.ToolTimeout):
+            runner.run_httpx(["https://example.com"], output, timeout=1)
+    # The temp targets file (cmd is ["httpx", "-l", <file>, ...]) must be cleaned up.
+    targets_file = mock_run.call_args[0][0][2]
+    assert not Path(targets_file).exists()

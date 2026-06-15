@@ -205,6 +205,37 @@ def test_run_jobs_executes_httpx_job(tmp_path):
     client.complete_job.assert_called_once_with("job-001", "done")
 
 
+def test_run_jobs_marks_failed_on_tool_timeout(tmp_path):
+    """A hung tool must mark the job failed, not freeze the runner."""
+    from vardrrunner.runner import ToolTimeout
+
+    job = {
+        "id": "job-timeout",
+        "program_id": "prog-1",
+        "tool_type": "httpx",
+        "target_source": "scope",
+        "config": {"timeout": 1},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {"in": [{"value": "app.example.com"}], "out": []}
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch(
+            "vardrrunner.commands.jobs.runner.run_httpx",
+            side_effect=ToolTimeout("httpx timed out after 1s and was killed"),
+        ),
+    ):
+        jobs_cmd.run_jobs(yes=True)  # must not raise — the daemon survives a hung tool
+
+    client.claim_job.assert_called_once_with("job-timeout")
+    assert client.complete_job.call_args[0][:2] == ("job-timeout", "failed")
+
+
 def test_run_jobs_no_jobs_exits():
     client = MagicMock()
     client.pending_jobs.return_value = []

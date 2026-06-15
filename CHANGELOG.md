@@ -6,6 +6,18 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+### Added
+- **Environment-variable config.** `VARDRMAP_URL` and `VARDRMAP_API_KEY` override the
+  config file (precedence: env > file), so containers, CI, and headless VPS daemons don't
+  need a config file. `status` reflects the resolved source.
+- **Per-tool run timeout.** Every tool subprocess now runs under a wall-clock limit
+  (default 1800 s; override per job via `config.timeout`, or globally via
+  `VARDRRUNNER_TOOL_TIMEOUT`). A hung tool is killed and the job marked **failed** instead
+  of freezing the daemon forever.
+### Security
+- **HTTPS enforced for the backend URL.** The runner refuses to send your `vmap_` API key
+  over plain HTTP to a non-local host (allowed for `localhost`, or with
+  `VARDRRUNNER_ALLOW_INSECURE=1`). Validated at login and on every authenticated call.
 ### Changed
 - **Resilient API client.** The HTTP session now retries transient failures
   (connection errors and 429/500/502/503/504) with exponential backoff, so a

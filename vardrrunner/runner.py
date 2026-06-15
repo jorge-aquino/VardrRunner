@@ -3,6 +3,7 @@ Safe subprocess runner. Only tools in ALLOWED_TOOLS can be executed.
 Commands are built as argument lists — shell=True is never used.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -19,6 +20,45 @@ ALLOWED_TOOLS = {
     "subfinder": "subfinder",
     "nmap": "nmap",
 }
+
+# Wall-clock ceiling for a single tool run. A hung tool must never freeze the
+# daemon forever — the run is killed and the job marked failed. Override per run
+# (job config `timeout`) or globally via the VARDRRUNNER_TOOL_TIMEOUT env var.
+DEFAULT_TOOL_TIMEOUT = 1800  # 30 minutes
+
+
+class ToolTimeout(Exception):
+    """Raised when a tool subprocess exceeds its timeout. The process is killed."""
+
+
+def _resolve_timeout(override: int | None) -> int:
+    """Pick the effective timeout: explicit override > env var > default."""
+    if override and override > 0:
+        return override
+    raw = os.environ.get("VARDRRUNNER_TOOL_TIMEOUT")
+    if raw:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+    return DEFAULT_TOOL_TIMEOUT
+
+
+def _run_tool(cmd: list[str], temp_file: str, tool: str, timeout: int | None) -> int:
+    """Run an allowlisted command with a timeout, always cleaning up the temp file.
+
+    Raises ToolTimeout (after killing the process) if the run exceeds the limit.
+    """
+    seconds = _resolve_timeout(timeout)
+    try:
+        result = subprocess.run(cmd, check=False, timeout=seconds)
+    except subprocess.TimeoutExpired as e:
+        raise ToolTimeout(f"{tool} timed out after {seconds}s and was killed") from e
+    finally:
+        Path(temp_file).unlink(missing_ok=True)
+    return result.returncode
 
 
 def tool_available(name: str) -> bool:
@@ -72,7 +112,7 @@ def strip_url_to_host(url: str) -> str:
     return parsed.hostname or stripped
 
 
-def run_httpx(targets: list[str], output_path: Path) -> int:
+def run_httpx(targets: list[str], output_path: Path, timeout: int | None = None) -> int:
     """Run httpx against a list of targets. Output is JSONL written to output_path."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(targets))
@@ -87,9 +127,7 @@ def run_httpx(targets: list[str], output_path: Path) -> int:
         str(output_path),
         "-silent",
     ]
-    result = subprocess.run(cmd, check=False)
-    Path(targets_file).unlink(missing_ok=True)
-    return result.returncode
+    return _run_tool(cmd, targets_file, "httpx", timeout)
 
 
 def run_nuclei(
@@ -97,6 +135,7 @@ def run_nuclei(
     output_path: Path,
     severity: str | None = None,
     templates: str | None = None,
+    timeout: int | None = None,
 ) -> int:
     """Run nuclei against a list of targets. Output is JSONL written to output_path."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
@@ -116,12 +155,16 @@ def run_nuclei(
     if templates:
         cmd += ["-t", templates]
 
-    result = subprocess.run(cmd, check=False)
-    Path(targets_file).unlink(missing_ok=True)
-    return result.returncode
+    return _run_tool(cmd, targets_file, "nuclei", timeout)
 
 
-def run_nmap(targets: list[str], output_path: Path, top_ports: int = 100, timing: int = 3) -> int:
+def run_nmap(
+    targets: list[str],
+    output_path: Path,
+    top_ports: int = 100,
+    timing: int = 3,
+    timeout: int | None = None,
+) -> int:
     """Run nmap with service detection against a list of targets.
 
     Safe profile only: --top-ports N, -sV with low intensity, -T{0-4}.
@@ -146,9 +189,7 @@ def run_nmap(targets: list[str], output_path: Path, top_ports: int = 100, timing
         str(output_path),
         "--open",
     ]
-    result = subprocess.run(cmd, check=False)
-    Path(targets_file).unlink(missing_ok=True)
-    return result.returncode
+    return _run_tool(cmd, targets_file, "nmap", timeout)
 
 
 def parse_nmap_xml(xml_path: Path) -> list[dict]:
@@ -204,7 +245,7 @@ def parse_nmap_xml(xml_path: Path) -> list[dict]:
     return services
 
 
-def run_subfinder(domains: list[str], output_path: Path) -> int:
+def run_subfinder(domains: list[str], output_path: Path, timeout: int | None = None) -> int:
     """Run subfinder against a list of root domains. Output is one host per line."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(domains))
@@ -218,6 +259,4 @@ def run_subfinder(domains: list[str], output_path: Path) -> int:
         str(output_path),
         "-silent",
     ]
-    result = subprocess.run(cmd, check=False)
-    Path(domains_file).unlink(missing_ok=True)
-    return result.returncode
+    return _run_tool(cmd, domains_file, "subfinder", timeout)

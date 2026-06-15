@@ -74,6 +74,10 @@ def execute_pending_jobs(
         target_src = job["target_source"]
         program_id = job["program_id"]
         cfg = job.get("config") or {}
+        try:
+            job_timeout = int(cfg["timeout"]) if cfg.get("timeout") else None
+        except (TypeError, ValueError):
+            job_timeout = None
 
         con.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
 
@@ -125,7 +129,13 @@ def execute_pending_jobs(
             sf_output = run_dir / "subfinder.txt"
             con.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
             _emit(client, job_id, "running", f"running subfinder on {len(domains)} domain(s)")
-            rc = runner.run_subfinder(domains, sf_output)
+            try:
+                rc = runner.run_subfinder(domains, sf_output, timeout=job_timeout)
+            except runner.ToolTimeout as e:
+                con.print(f"[red]Job failed:[/red] {e}")
+                client.complete_job(job_id, "failed", error=str(e)[:500])
+                _emit(client, job_id, "failed", str(e)[:500])
+                continue
             if rc != 0:
                 con.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
 
@@ -220,7 +230,13 @@ def execute_pending_jobs(
             )
 
             try:
-                rc = runner.run_nmap(nmap_targets, xml_path, top_ports=top_ports, timing=timing)
+                rc = runner.run_nmap(
+                    nmap_targets,
+                    xml_path,
+                    top_ports=top_ports,
+                    timing=timing,
+                    timeout=job_timeout,
+                )
                 if rc != 0:
                     con.print(f"[yellow]nmap exited with code {rc}[/yellow]")
 
@@ -301,7 +317,7 @@ def execute_pending_jobs(
                 output = run_dir / "httpx.jsonl"
                 con.print(f"Running httpx… output → [dim]{output}[/dim]")
                 _emit(client, job_id, "running", f"running httpx against {len(targets)} target(s)")
-                rc = runner.run_httpx(targets, output)
+                rc = runner.run_httpx(targets, output, timeout=job_timeout)
             else:  # nuclei
                 output = run_dir / "nuclei.jsonl"
                 severity = cfg.get("severity")
@@ -319,7 +335,9 @@ def execute_pending_jobs(
                     "running",
                     f"running nuclei ({label}) against {len(targets)} target(s)",
                 )
-                rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
+                rc = runner.run_nuclei(
+                    targets, output, severity=severity, templates=templates, timeout=job_timeout
+                )
 
             if rc != 0:
                 con.print(f"[yellow]{tool_type} exited with code {rc}[/yellow]")

@@ -28,6 +28,15 @@ def _make_run_dir() -> Path:
     return run_dir
 
 
+def _execute(run_callable):
+    """Run a tool callable, exiting cleanly on timeout instead of dumping a traceback."""
+    try:
+        return run_callable()
+    except runner.ToolTimeout as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+
 def _resolve_targets(
     client: api.VardrMapClient,
     program_id: str,
@@ -125,7 +134,7 @@ def run_httpx(
     output = run_dir / "httpx.jsonl"
     console.print(f"\nRunning httpx… output → [dim]{output}[/dim]")
 
-    rc = runner.run_httpx(targets, output)
+    rc = _execute(lambda: runner.run_httpx(targets, output))
     if rc != 0:
         console.print(f"[yellow]httpx exited with code {rc}[/yellow]")
 
@@ -185,7 +194,7 @@ def run_subfinder(
     output = run_dir / "subfinder.txt"
     console.print(f"\nRunning subfinder… output → [dim]{output}[/dim]")
 
-    rc = runner.run_subfinder(domains, output)
+    rc = _execute(lambda: runner.run_subfinder(domains, output))
     if rc != 0:
         console.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
 
@@ -246,7 +255,9 @@ def run_nuclei(
     label = f"severity={severity}" if severity else "all severities"
     console.print(f"\nRunning nuclei ({label})… output → [dim]{output}[/dim]")
 
-    rc = runner.run_nuclei(targets, output, severity=severity, templates=templates)
+    rc = _execute(
+        lambda: runner.run_nuclei(targets, output, severity=severity, templates=templates)
+    )
     if rc != 0:
         console.print(f"[yellow]nuclei exited with code {rc}[/yellow]")
 

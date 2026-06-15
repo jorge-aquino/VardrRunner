@@ -24,7 +24,7 @@ either direction.
 |------|----------------|
 | `vardrrunner/cli.py` | Typer application; defines command groups and wires them together. Thin — delegates to `commands/`. |
 | `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. Retries transient failures (connection errors, 429/5xx) with exponential backoff on idempotent methods only (never POST/PATCH); sends a `User-Agent: vardrrunner/<version>` header. |
-| `vardrrunner/config.py` | Read/write `~/.vardrmap/config.json` (`api_url`, `api_key`); restricts file permissions; `require_auth()` guards commands. |
+| `vardrrunner/config.py` | Resolve credentials (env `VARDRMAP_URL`/`VARDRMAP_API_KEY` over `~/.vardrmap/config.json`); restrict file permissions; `validate_api_url()` enforces HTTPS; `require_auth()` guards commands. |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
 | `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei` — execute one tool, upload results. |
@@ -67,11 +67,16 @@ All local state lives under `~/.vardrmap/`:
 - `config.json` — `api_url` + `api_key` (secret; 0600 on Unix)
 - `runs/` — timestamped tool output directories
 
-The API key is the runner's only credential. It is never logged or printed.
+Credentials may instead come from `VARDRMAP_URL` / `VARDRMAP_API_KEY` env vars, which take
+precedence over the file (useful for containers, CI, and headless VPS daemons). The backend
+URL must be HTTPS (except `localhost`, or with `VARDRRUNNER_ALLOW_INSECURE=1`) so the key is
+never sent in cleartext. The API key is the runner's only credential; it is never logged or printed.
 
 ## Design invariants
 - **All HTTP goes through `api.py`.** No ad-hoc requests elsewhere.
 - **All backend data is untrusted.** Validate and normalize before it reaches a subprocess.
+- **Every tool run is time-bounded.** A hung tool is killed and the job marked failed — the
+  daemon never blocks forever.
 - **Failures are loud.** A missing/failed tool fails the job; it is never skipped silently.
 - **No backend coupling.** The runner must build, test, and run without the backend present
   (tests mock every HTTP and subprocess call).

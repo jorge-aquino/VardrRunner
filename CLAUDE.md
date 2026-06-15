@@ -38,11 +38,15 @@ This is not "just another CLI." It is built to a product-grade bar — see the
 - Tools the runner shells out to are external input — validate/normalize args, never build shell strings from unsanitized server data
 
 ## Security expectations
-- The API key lives only in `~/.vardrmap/config.json` (0600 on Unix); never echo it
+- The API key lives in `~/.vardrmap/config.json` (0600 on Unix) or the `VARDRMAP_API_KEY`
+  env var; never echo it
+- The backend URL must be HTTPS (except `localhost`) so the key is never sent in cleartext;
+  `config.validate_api_url` enforces this at login and on every authenticated call
 - Treat all data from the backend as untrusted: validate job payloads, normalize targets
   (e.g. `strip_url_to_host` for nmap) before passing them to a subprocess
 - Never use `shell=True` with interpolated server data; pass argv lists
-- A missing or failed tool marks the job **failed** with a clear reason — never silently skip
+- Every tool run is bounded by a timeout; a missing, failed, or **timed-out** tool marks the
+  job **failed** with a clear reason — never silently skip and never hang the daemon
 
 ## Documentation rules
 A change is **behavior-changing** if it adds, removes, or modifies a command, flag,

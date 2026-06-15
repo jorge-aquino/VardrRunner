@@ -69,6 +69,19 @@ Config lives at `~/.vardrmap/config.json` and holds your `api_url` and `api_key`
 **Treat this file as a secret** — it contains your key in plaintext (permissions are
 restricted to the owner on Unix).
 
+For containers, CI, or a headless VPS, set credentials via environment variables instead
+(they take precedence over the file):
+
+| Variable | Purpose |
+|----------|---------|
+| `VARDRMAP_URL` | Backend base URL (must be `https://`, except `localhost`) |
+| `VARDRMAP_API_KEY` | Your `vmap_` API key |
+| `VARDRRUNNER_TOOL_TIMEOUT` | Per-tool run timeout in seconds (default 1800); a hung tool is killed and the job marked failed |
+| `VARDRRUNNER_ALLOW_INSECURE` | Set to `1` to permit a plain-HTTP backend URL (not recommended) |
+
+The runner refuses to send your API key over plain HTTP to a non-local host, so a mistyped
+`http://` URL can't leak your key.
+
 ## Documentation
 - [docs/architecture.md](docs/architecture.md) — how the runner is structured and how it talks to the backend
 - [docs/development.md](docs/development.md) — local setup, testing, and contribution workflow
