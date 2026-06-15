@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from vardrrunner import api, config, runner
+from vardrrunner import api, config, configs, runner
 from vardrrunner.commands.heartbeat import send_heartbeat
 from vardrrunner.commands.run import _confirm, _is_wildcard, _make_run_dir, _resolve_targets
 
@@ -56,6 +56,13 @@ def _emit(client: api.VardrMapClient, job_id: str, kind: str, text: str = "") ->
         pass
 
 
+def _fail_job(client: api.VardrMapClient, con: Console, job_id: str, error: str) -> None:
+    """Mark a job failed and emit the matching event — the single failure path."""
+    con.print(f"[red]Job failed:[/red] {error}")
+    client.complete_job(job_id, "failed", error=error[:500])
+    _emit(client, job_id, "failed", error[:500])
+
+
 def execute_pending_jobs(
     client: api.VardrMapClient,
     con: Console,
@@ -74,10 +81,6 @@ def execute_pending_jobs(
         target_src = job["target_source"]
         program_id = job["program_id"]
         cfg = job.get("config") or {}
-        try:
-            job_timeout = int(cfg["timeout"]) if cfg.get("timeout") else None
-        except (TypeError, ValueError):
-            job_timeout = None
 
         con.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
 
@@ -91,6 +94,11 @@ def execute_pending_jobs(
 
         # ── subfinder: wildcard domain resolution + plain-text → JSONL upload ──
         if tool_type == "subfinder":
+            try:
+                sf_cfg = configs.SubfinderConfig.from_dict(cfg)
+            except configs.ConfigError as e:
+                _fail_job(client, con, job_id, f"invalid config: {e}")
+                continue
             try:
                 raw = client.scope(program_id)
                 domains = []
@@ -130,7 +138,7 @@ def execute_pending_jobs(
             con.print(f"Running subfinder… output → [dim]{sf_output}[/dim]")
             _emit(client, job_id, "running", f"running subfinder on {len(domains)} domain(s)")
             try:
-                rc = runner.run_subfinder(domains, sf_output, timeout=job_timeout)
+                rc = runner.run_subfinder(domains, sf_output, timeout=sf_cfg.timeout)
             except runner.ToolTimeout as e:
                 con.print(f"[red]Job failed:[/red] {e}")
                 client.complete_job(job_id, "failed", error=str(e)[:500])
@@ -171,8 +179,11 @@ def execute_pending_jobs(
         # ── nmap: service discovery — XML output → services API ──────────────
         if tool_type == "nmap":
             try:
-                status_code_filter: int | None = None
-                limit_n: int = int(cfg.get("limit", 500))
+                nm_cfg = configs.NmapConfig.from_dict(cfg)
+            except configs.ConfigError as e:
+                _fail_job(client, con, job_id, f"invalid config: {e}")
+                continue
+            try:
                 targets = _resolve_targets(
                     client=client,
                     program_id=program_id,
@@ -180,8 +191,8 @@ def execute_pending_jobs(
                     from_recon=(target_src == "recon"),
                     target=None,
                     targets_file=None,
-                    status_code=status_code_filter,
-                    limit=limit_n,
+                    status_code=None,
+                    limit=nm_cfg.limit,
                 )
             except SystemExit:
                 error = "Failed to resolve targets"
@@ -211,8 +222,8 @@ def execute_pending_jobs(
             )
             _emit(client, job_id, "targets_resolved", f"{len(targets)} target(s) from {target_src}")
 
-            top_ports = int(cfg.get("top_ports", 100))
-            timing = int(cfg.get("timing", 3))
+            top_ports = nm_cfg.top_ports
+            timing = nm_cfg.timing
             run_dir = _make_run_dir()
             xml_path = run_dir / "nmap.xml"
 
@@ -235,7 +246,7 @@ def execute_pending_jobs(
                     xml_path,
                     top_ports=top_ports,
                     timing=timing,
-                    timeout=job_timeout,
+                    timeout=nm_cfg.timeout,
                 )
                 if rc != 0:
                     con.print(f"[yellow]nmap exited with code {rc}[/yellow]")
@@ -273,8 +284,15 @@ def execute_pending_jobs(
 
         # ── httpx / nuclei: shared target resolution ──────────────────────────
         try:
-            status_code: int | None = cfg.get("status_code")
-            limit: int = int(cfg.get("limit", 100))
+            hn_cfg: configs.HttpxConfig | configs.NucleiConfig = (
+                configs.HttpxConfig.from_dict(cfg)
+                if tool_type == "httpx"
+                else configs.NucleiConfig.from_dict(cfg)
+            )
+        except configs.ConfigError as e:
+            _fail_job(client, con, job_id, f"invalid config: {e}")
+            continue
+        try:
             targets = _resolve_targets(
                 client=client,
                 program_id=program_id,
@@ -282,8 +300,8 @@ def execute_pending_jobs(
                 from_recon=(target_src == "recon"),
                 target=None,
                 targets_file=None,
-                status_code=status_code,
-                limit=limit,
+                status_code=hn_cfg.status_code,
+                limit=hn_cfg.limit,
             )
         except SystemExit:
             error = "Failed to resolve targets"
@@ -317,16 +335,11 @@ def execute_pending_jobs(
                 output = run_dir / "httpx.jsonl"
                 con.print(f"Running httpx… output → [dim]{output}[/dim]")
                 _emit(client, job_id, "running", f"running httpx against {len(targets)} target(s)")
-                rc = runner.run_httpx(targets, output, timeout=job_timeout)
+                rc = runner.run_httpx(targets, output, timeout=hn_cfg.timeout)
             else:  # nuclei
+                assert isinstance(hn_cfg, configs.NucleiConfig)
                 output = run_dir / "nuclei.jsonl"
-                severity = cfg.get("severity")
-                raw_templates = cfg.get("templates")
-                templates = (
-                    ",".join(raw_templates)
-                    if isinstance(raw_templates, list)
-                    else (raw_templates or None)
-                )
+                severity = hn_cfg.severity
                 label = f"severity={severity}" if severity else "all"
                 con.print(f"Running nuclei ({label})… output → [dim]{output}[/dim]")
                 _emit(
@@ -336,7 +349,11 @@ def execute_pending_jobs(
                     f"running nuclei ({label}) against {len(targets)} target(s)",
                 )
                 rc = runner.run_nuclei(
-                    targets, output, severity=severity, templates=templates, timeout=job_timeout
+                    targets,
+                    output,
+                    severity=severity,
+                    templates=hn_cfg.templates,
+                    timeout=hn_cfg.timeout,
                 )
 
             if rc != 0:

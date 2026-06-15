@@ -274,3 +274,62 @@ def run_nuclei(
         console.print(f"[red]Upload failed:[/red] {e}")
         console.print(f"Raw output saved at [dim]{output}[/dim]")
         raise typer.Exit(1) from e
+
+
+def run_nmap(
+    program_id: str,
+    scope: bool = False,
+    from_recon: bool = False,
+    target: str | None = None,
+    targets_file: Path | None = None,
+    limit: int = 500,
+    top_ports: int = 100,
+    timing: int = 3,
+    yes: bool = False,
+):
+    """Run nmap service discovery and upload open ports to VardrMap's services API."""
+    runner.check_tool("nmap")
+    url, key = config.require_auth()
+    client = api.VardrMapClient(url, key)
+
+    targets = _resolve_targets(
+        client, program_id, scope, from_recon, target, targets_file, None, limit
+    )
+    # nmap wants hostnames/IPs, not full URLs; normalize and de-duplicate.
+    targets = list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
+    if not targets:
+        console.print("[yellow]No targets found.[/yellow]")
+        raise typer.Exit(0)
+
+    _confirm(targets, "nmap", yes)
+
+    run_dir = _make_run_dir()
+    xml_path = run_dir / "nmap.xml"
+    console.print(
+        f"\nRunning nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]"
+    )
+
+    rc = _execute(lambda: runner.run_nmap(targets, xml_path, top_ports=top_ports, timing=timing))
+    if rc != 0:
+        console.print(f"[yellow]nmap exited with code {rc}[/yellow]")
+
+    if not xml_path.exists() or xml_path.stat().st_size == 0:
+        console.print("[yellow]No nmap output produced.[/yellow]")
+        raise typer.Exit(0)
+
+    services = runner.parse_nmap_xml(xml_path)
+    console.print(f"Parsed [bold]{len(services)}[/bold] open port(s).")
+    if not services:
+        console.print("[yellow]No open ports found.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print("Uploading services…")
+    try:
+        result = client.create_services(program_id, services)
+        created = result.get("created", 0)
+        updated = result.get("updated", 0)
+        console.print(f"[green]Done.[/green] {created} new, {updated} updated service(s).")
+    except Exception as e:
+        console.print(f"[red]Upload failed:[/red] {e}")
+        console.print(f"Raw output saved at [dim]{xml_path}[/dim]")
+        raise typer.Exit(1) from e

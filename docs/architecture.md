@@ -25,6 +25,7 @@ either direction.
 | `vardrrunner/cli.py` | Typer application; defines command groups and wires them together. Thin — delegates to `commands/`. |
 | `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. Retries transient failures (connection errors, 429/5xx) with exponential backoff on idempotent methods only (never POST/PATCH); sends a `User-Agent: vardrrunner/<version>` header. |
 | `vardrrunner/config.py` | Resolve credentials (env `VARDRMAP_URL`/`VARDRMAP_API_KEY` over `~/.vardrmap/config.json`); restrict file permissions; `validate_api_url()` enforces HTTPS; `require_auth()` guards commands. |
+| `vardrrunner/configs.py` | Typed, validated tool configs (`HttpxConfig`, `NucleiConfig`, `NmapConfig`, `SubfinderConfig`). Raw backend dicts are parsed into frozen dataclasses up front; invalid values raise `ConfigError` and fail the job fast. |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
 | `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei` — execute one tool, upload results. |

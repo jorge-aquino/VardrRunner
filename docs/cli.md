@@ -43,12 +43,18 @@ vardrrunner heartbeat
 
 ## `run` — run a tool locally and upload results
 ```bash
-vardrrunner run httpx     --program-id <id> [options]
-vardrrunner run subfinder --program-id <id> [options]
-vardrrunner run nuclei    --program-id <id> [options]
+vardrrunner run httpx     --program <id> [options]
+vardrrunner run subfinder --program <id> [options]
+vardrrunner run nuclei    --program <id> [options]
+vardrrunner run nmap      --program <id> [--top-ports N] [--timing 0-4] [options]
 ```
 Executes the named tool against the program's scope, captures output into a timestamped
 run directory under `~/.vardrmap/runs`, and uploads parsed results to the backend.
+`run nmap` performs safe-profile service discovery (normalizes URLs to hosts, never uses
+`-A`/`-O`/`-p-`/`--script`/`-T5`) and uploads open ports to the services API.
+
+Every tool run is bounded by a timeout (default 1800 s; set `VARDRRUNNER_TOOL_TIMEOUT`); a
+hung tool is killed rather than blocking.
 
 ---
 

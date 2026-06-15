@@ -325,3 +325,37 @@ def test_run_nmap_job_strips_url_targets(tmp_path):
     assert "app.example.com" in captured_targets
     assert "10.0.0.2" in captured_targets
     assert not any("https" in t for t in captured_targets)
+
+
+# ---------------------------------------------------------------------------
+# vardrrunner run nmap — manual command
+# ---------------------------------------------------------------------------
+
+
+def test_run_nmap_command_normalizes_and_uploads_services(tmp_path):
+    from vardrrunner.commands import run as run_cmd
+
+    # The command checks for nmap XML output after running; create it (run_nmap is mocked).
+    (tmp_path / "nmap.xml").write_text("<nmaprun></nmaprun>")
+
+    client = MagicMock()
+    client.create_services.return_value = {"created": 2, "updated": 1}
+    services = [{"host": "app.example.com", "port": 443, "protocol": "tcp"}]
+
+    with (
+        patch("vardrrunner.commands.run.config.require_auth", return_value=("https://api", "key")),
+        patch("vardrrunner.commands.run.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.run.runner.check_tool"),
+        patch(
+            "vardrrunner.commands.run._resolve_targets",
+            return_value=["https://app.example.com/path"],
+        ),
+        patch("vardrrunner.commands.run._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.commands.run.runner.run_nmap", return_value=0) as mock_nmap,
+        patch("vardrrunner.commands.run.runner.parse_nmap_xml", return_value=services),
+    ):
+        run_cmd.run_nmap(program_id="prog-1", target="https://app.example.com/path", yes=True)
+
+    # URL was normalized to bare host before nmap, and services uploaded.
+    assert mock_nmap.call_args[0][0] == ["app.example.com"]
+    client.create_services.assert_called_once_with("prog-1", services)

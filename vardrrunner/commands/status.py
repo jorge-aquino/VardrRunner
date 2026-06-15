@@ -91,7 +91,8 @@ def run_status() -> None:
     # Tools
     # ------------------------------------------------------------------
     tools_table = Table(show_header=False, box=None, padding=(0, 1))
-    for tool in ("httpx", "nuclei", "subfinder"):
+    # Iterate the allowlist directly so status never drifts from what the runner supports.
+    for tool in runner.ALLOWED_TOOLS:
         found = runner.tool_available(tool)
         _row(tools_table, found, f"{tool} {'found' if found else 'not found on PATH'}")
 
