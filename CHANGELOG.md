@@ -7,6 +7,14 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 ### Added
+- **Typed, validated job configs.** Tool configs (`limit`, `status_code`, `severity`,
+  `templates`, `top_ports`, `timing`, `timeout`) are parsed into frozen dataclasses
+  (`configs.py`) and validated up front. A malformed or drifted backend payload now fails
+  the job fast with a clear message (e.g. out-of-range nmap timing, unknown nuclei severity)
+  instead of blowing up mid-execution.
+- **`vardrrunner run nmap`.** Direct service-discovery command (safe profile only), matching
+  the existing nmap *job* support. `status` now lists every allowlisted tool (incl. nmap),
+  so it can't drift from what the runner actually supports.
 - **Environment-variable config.** `VARDRMAP_URL` and `VARDRMAP_API_KEY` override the
   config file (precedence: env > file), so containers, CI, and headless VPS daemons don't
   need a config file. `status` reflects the resolved source.
