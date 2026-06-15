@@ -19,10 +19,12 @@ This is not "just another CLI." It is built to a product-grade bar — see the
 - `vardrrunner/` — the Python package (source of truth)
   - `cli.py` — Typer app; wires every sub-command
   - `api.py` — thin HTTP client (`requests.Session`); the only thing that talks to a backend
-  - `config.py` — reads/writes `~/.vardrmap/config.json` (holds the API key — treat as secret)
-  - `runner.py` — subprocess execution, output capture, run directory management
-  - `commands/` — one module per command group: `auth`, `daemon`, `heartbeat`, `imports`, `jobs`, `programs`, `run`, `status`
-- `tests/` — pytest suite (113 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
+  - `config.py` — resolves credentials (env over `~/.vardrmap/config.json`); enforces HTTPS (holds the API key — treat as secret)
+  - `configs.py` — typed, validated tool configs (frozen dataclasses; bad payload → `ConfigError`)
+  - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; **add a tool here** (see ADR 0002)
+  - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
+  - `commands/` — one module per command group: `auth`, `daemon`, `heartbeat`, `imports`, `jobs` (job lifecycle), `programs`, `run`, `status`
+- `tests/` — pytest suite (170 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
 - `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
 - `docs/adr/` — Architecture Decision Records, one per non-trivial decision
 - `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index

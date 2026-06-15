@@ -26,11 +26,12 @@ either direction.
 | `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. Retries transient failures (connection errors, 429/5xx) with exponential backoff on idempotent methods only (never POST/PATCH); sends a `User-Agent: vardrrunner/<version>` header. |
 | `vardrrunner/config.py` | Resolve credentials (env `VARDRMAP_URL`/`VARDRMAP_API_KEY` over `~/.vardrmap/config.json`); restrict file permissions; `validate_api_url()` enforces HTTPS; `require_auth()` guards commands. |
 | `vardrrunner/configs.py` | Typed, validated tool configs (`HttpxConfig`, `NucleiConfig`, `NmapConfig`, `SubfinderConfig`). Raw backend dicts are parsed into frozen dataclasses up front; invalid values raise `ConfigError` and fail the job fast. |
+| `vardrrunner/handlers.py` | One `ToolHandler` per job type (`parse_config`/`resolve_targets`/`execute`/`upload`) plus the `REGISTRY`. Adding a tool is a one-file change here (see ADR 0002). |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
-| `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei` — execute one tool, upload results. |
+| `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei|nmap` — execute one tool, upload results. |
 | `vardrrunner/commands/imports.py` | `import nuclei|httpx|ffuf` — push an existing output file. |
-| `vardrrunner/commands/jobs.py` | `jobs list|run` — one-shot queue inspection and execution; `execute_pending_jobs()` is the shared execution core. |
+| `vardrrunner/commands/jobs.py` | `jobs list|run` — owns the uniform job *lifecycle* (`_execute_one`): capability → config → targets → claim → events → upload → done/fail, delegating specifics to a `handlers` registry entry. |
 | `vardrrunner/commands/daemon.py` | `daemon start|stop|status` — continuous worker (poll + heartbeat) with PID file and graceful shutdown. |
 | `vardrrunner/commands/heartbeat.py` | `heartbeat` — send a single heartbeat. |
 | `vardrrunner/commands/status.py` | `status` — local config, version, detected tool availability. |

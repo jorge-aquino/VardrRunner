@@ -6,6 +6,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+### Changed
+- **Tool-handler registry.** `execute_pending_jobs` (~290 lines of per-tool `if` branches)
+  is refactored into a `ToolHandler` per job type (`handlers.py`) driven by one uniform
+  lifecycle (`_execute_one`): capability check → config → targets → claim → events → upload
+  → done/fail. Every tool now gets identical claim/event/failure handling, and adding a tool
+  is a one-file change. No behavior change. See
+  [docs/adr/0002-tool-handler-registry.md](docs/adr/0002-tool-handler-registry.md).
 ### Added
 - **Typed, validated job configs.** Tool configs (`limit`, `status_code`, `severity`,
   `templates`, `top_ports`, `timing`, `timeout`) are parsed into frozen dataclasses

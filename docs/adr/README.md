@@ -13,3 +13,4 @@ the way it does.
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-extract-vardrrunner-from-vardrmap.md) | Extract VardrRunner from the VardrMap monorepo | Accepted |
+| [0002](0002-tool-handler-registry.md) | Tool-handler registry for job execution | Accepted |
