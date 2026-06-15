@@ -76,4 +76,13 @@ The CLI reads/writes `~/.vardrmap/config.json`. To point at a local backend:
 ```bash
 vardrrunner login vardrmap     # enter http://localhost:8000 and a dev API key
 ```
-Delete `~/.vardrmap/config.json` to reset auth.
+`http://localhost` is accepted; any other host must be `https://` (the runner refuses to
+send the key over plain HTTP). Delete `~/.vardrmap/config.json` to reset auth.
+
+Or skip the file entirely with environment variables (handy for tests/containers):
+```bash
+export VARDRMAP_URL=http://localhost:8000
+export VARDRMAP_API_KEY=vmap_devkey
+export VARDRRUNNER_TOOL_TIMEOUT=300        # optional: per-tool run ceiling, seconds
+```
+Env values take precedence over the config file.

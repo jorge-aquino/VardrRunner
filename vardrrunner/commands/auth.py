@@ -23,6 +23,12 @@ def login_vardrmap(
         console.print("[red]Error:[/red] API key must start with vmap_")
         raise typer.Exit(1)
 
+    try:
+        config.validate_api_url(api_url)
+    except config.InvalidApiUrl as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from e
+
     # Verify the key works before saving
     console.print("Verifying credentials…")
     try:

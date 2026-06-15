@@ -23,9 +23,9 @@ def _row(table: Table, ok: bool, message: str) -> None:
 
 
 def run_status() -> None:
-    cfg = config.load()
-    api_url = cfg.get("api_url")
-    api_key = cfg.get("api_key")
+    # Resolve via the same precedence the rest of the CLI uses: env over file.
+    api_url = config.get_api_url()
+    api_key = config.get_api_key()
     config_exists = config.CONFIG_FILE.exists()
 
     console.print()
