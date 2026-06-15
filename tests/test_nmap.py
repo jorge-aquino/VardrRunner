@@ -314,7 +314,7 @@ def test_run_nmap_job_strips_url_targets(tmp_path):
         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
         patch(
-            "vardrrunner.commands.jobs._resolve_targets",
+            "vardrrunner.handlers._resolve_targets",
             return_value=["https://app.example.com/path", "http://10.0.0.2:8080/api"],
         ),
         patch("vardrrunner.commands.jobs.runner.run_nmap", side_effect=fake_run_nmap),

@@ -87,7 +87,7 @@ def test_run_jobs_httpx_emits_lifecycle_events(tmp_path):
         patch("vardrrunner.commands.jobs.send_heartbeat"),
         patch("vardrrunner.commands.jobs.config.require_auth", return_value=("https://x.com", "k")),
         patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=mock_client),
-        patch("vardrrunner.commands.jobs._resolve_targets", return_value=["https://example.com"]),
+        patch("vardrrunner.handlers._resolve_targets", return_value=["https://example.com"]),
         patch("vardrrunner.commands.jobs._confirm"),
         patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
         patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
