@@ -6,6 +6,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+### Added
+- **Recon pipelines.** `vardrrunner pipeline run recon --program <id>` chains tools in one
+  command — `recon` = subfinder → httpx → nuclei, `quick` = subfinder → httpx. Each stage
+  uploads its results so the next pulls them from the recon store; the run preflights tool
+  availability, validates the nuclei `--severity` filter up front, stops early on an empty
+  stage, and supports `--continue-on-error`. `vardrrunner pipeline list` shows the chains.
+  Built on the handler registry — a pipeline is just an ordered list of `Stage(tool, source)`.
 ### Changed
 - **Tool-handler registry.** `execute_pending_jobs` (~290 lines of per-tool `if` branches)
   is refactored into a `ToolHandler` per job type (`handlers.py`) driven by one uniform

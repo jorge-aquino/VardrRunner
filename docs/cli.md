@@ -69,6 +69,29 @@ tool. `-f` is shorthand for `--file`.
 
 ---
 
+## `pipeline` — chain tools into one recon workflow
+```bash
+vardrrunner pipeline list                              # show available pipelines
+vardrrunner pipeline run recon --program <id> [options]
+```
+A pipeline runs an ordered chain of tools, each uploading its results so the next stage
+pulls them from the recon store. Built-in pipelines:
+
+| Name | Chain |
+|------|-------|
+| `recon` | subfinder (enumerate subdomains from wildcard scope) → httpx (probe) → nuclei (scan) |
+| `quick` | subfinder → httpx |
+
+Options for `pipeline run`:
+- `--severity high,critical` — nuclei severity filter for the scan stage
+- `--yes` / `-y` — skip the confirmation prompt
+- `--continue-on-error` — keep going if a stage fails (default: stop)
+
+The pipeline preflights that every tool in the chain is installed, and stops early if a
+stage produces no targets (e.g. no subdomains discovered).
+
+---
+
 ## `jobs` — one-shot queue operations
 ```bash
 vardrrunner jobs list     # show pending/running jobs for your account

@@ -86,7 +86,8 @@ vardrrunner daemon start        # continuous worker: polls jobs + heartbeats
 
 ## Command surface (see docs/cli.md for detail)
 - `login vardrmap` — authenticate and persist config
-- `run httpx|subfinder|nuclei` — run a tool locally, upload results
+- `run httpx|subfinder|nuclei|nmap` — run a tool locally, upload results
+- `pipeline list|run <name>` — chain tools into one recon workflow (subfinder → httpx → nuclei)
 - `import nuclei|httpx|ffuf` — import an existing output file
 - `jobs list|run` — inspect and execute the backend job queue (one-shot)
 - `daemon start|stop|status` — long-running background worker (poll + heartbeat)
