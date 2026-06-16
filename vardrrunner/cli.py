@@ -13,6 +13,7 @@ from rich.console import Console
 from vardrrunner.commands import auth, imports, jobs, programs, run
 from vardrrunner.commands import daemon as daemon_cmd
 from vardrrunner.commands import heartbeat as heartbeat_cmd
+from vardrrunner.commands import pipeline as pipeline_cmd
 from vardrrunner.commands import status as status_cmd
 
 console = Console()
@@ -285,4 +286,40 @@ def run_nmap(
         top_ports=top_ports,
         timing=timing,
         yes=yes,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Pipeline
+# --------------------------------------------------------------------------- #
+
+pipeline_app = typer.Typer(help="Run a chain of tools as one recon pipeline.", no_args_is_help=True)
+app.add_typer(pipeline_app, name="pipeline")
+
+
+@pipeline_app.command("list")
+def pipeline_list():
+    """List the available pipelines and their tool chains."""
+    pipeline_cmd.list_pipelines()
+
+
+@pipeline_app.command("run")
+def pipeline_run(
+    name: str = typer.Argument(..., help="Pipeline name (see `pipeline list`)"),
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    severity: str | None = typer.Option(
+        None, "--severity", help="nuclei severity filter for the scan stage"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    continue_on_error: bool = typer.Option(
+        False, "--continue-on-error", help="Keep going if a stage fails"
+    ),
+):
+    """Run every stage of a pipeline in order against a program."""
+    pipeline_cmd.run_pipeline(
+        name,
+        program_id,
+        severity=severity,
+        yes=yes,
+        continue_on_error=continue_on_error,
     )
