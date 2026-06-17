@@ -71,11 +71,23 @@ def _complete_done(client: api.VardrMapClient, job_id: str, note: str = "") -> N
 
 def _execute_one(client: api.VardrMapClient, con: Console, job: dict, yes: bool) -> None:
     """Run a single job through the uniform lifecycle, delegating specifics to its handler."""
-    job_id = job["id"]
-    tool_type = job["tool_type"]
-    target_src = job["target_source"]
-    program_id = job["program_id"]
-    cfg = job.get("config") or {}
+    # Validate the job envelope before touching any field — a drifted/partial payload
+    # must fail cleanly, not crash the loop with a KeyError.
+    try:
+        env = configs.JobEnvelope.from_dict(job)
+    except configs.ConfigError as e:
+        job_id = job.get("id")
+        if job_id:
+            _fail_job(client, con, str(job_id), f"malformed job: {e}")
+        else:
+            con.print(f"[red]Skipping malformed job:[/red] {e}")
+        return
+
+    job_id = env.id
+    tool_type = env.tool_type
+    target_src = env.target_source
+    program_id = env.program_id
+    cfg = env.config
 
     con.rule(f"Job {job_id[:8]}… — {tool_type} / {target_src}")
 

@@ -18,6 +18,31 @@ class ConfigError(ValueError):
     """A job config value is missing, the wrong type, or out of range."""
 
 
+@dataclass(frozen=True)
+class JobEnvelope:
+    """The validated job wrapper from the backend (everything but the tool config)."""
+
+    id: str
+    tool_type: str
+    target_source: str
+    program_id: str
+    config: dict
+
+    @classmethod
+    def from_dict(cls, job: dict) -> "JobEnvelope":
+        required = ("id", "tool_type", "target_source", "program_id")
+        missing = [k for k in required if not job.get(k)]
+        if missing:
+            raise ConfigError(f"job missing required field(s): {', '.join(missing)}")
+        return cls(
+            id=str(job["id"]),
+            tool_type=str(job["tool_type"]),
+            target_source=str(job["target_source"]),
+            program_id=str(job["program_id"]),
+            config=job.get("config") or {},
+        )
+
+
 def _opt_int(cfg: dict, key: str, *, minimum: int | None = None, maximum: int | None = None):
     """Parse an optional int; return None when absent. Raise ConfigError if invalid."""
     raw = cfg.get(key)

@@ -236,6 +236,24 @@ def test_run_jobs_marks_failed_on_tool_timeout(tmp_path):
     assert client.complete_job.call_args[0][:2] == ("job-timeout", "failed")
 
 
+def test_run_jobs_malformed_job_marks_failed():
+    """A job missing a required envelope field fails cleanly instead of crashing the loop."""
+    job = {"id": "job-x", "program_id": "p", "target_source": "scope"}  # no tool_type
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+    ):
+        jobs_cmd.run_jobs(yes=True)  # must not raise
+
+    client.claim_job.assert_not_called()
+    args, kwargs = client.complete_job.call_args
+    assert args[:2] == ("job-x", "failed")
+    assert "malformed" in kwargs["error"]
+
+
 def test_run_jobs_no_jobs_exits():
     client = MagicMock()
     client.pending_jobs.return_value = []

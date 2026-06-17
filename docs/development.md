@@ -26,7 +26,7 @@ pip install -e ".[dev]"  # editable install + dev tools (pytest, ruff, mypy)
 pytest tests                                          # quick run
 pytest tests --cov=vardrrunner --cov-report=term-missing   # with coverage (as CI runs it)
 ```
-- **113 tests**, all hermetic: no network, no real subprocesses, no real filesystem state
+- **188 tests**, all hermetic: no network, no real subprocesses, no real filesystem state
   outside temp dirs.
 - The suite must be **green before every commit** (Engineering Charter §3).
 - Add tests in the **same commit** as any behavior change.
@@ -34,13 +34,18 @@ pytest tests --cov=vardrrunner --cov-report=term-missing   # with coverage (as C
 ### What the tests cover
 | File | Area |
 |------|------|
-| `tests/test_config.py` | config read/write, auth requirement |
-| `tests/test_jobs.py` | queue list/run, claim race handling, execution core |
+| `tests/test_config.py` | credential resolution (env/file), HTTPS validation, auth |
+| `tests/test_configs.py` | typed tool configs + `JobEnvelope` validation |
+| `tests/test_handlers.py` | per-tool handlers + the registry |
+| `tests/test_jobs.py` | job lifecycle, malformed envelope, claim race, execution core |
+| `tests/test_pipelines.py` | pipeline definitions + sequential runner (incl. continue-on-error) |
+| `tests/test_run_commands.py` | direct `run` commands validate options like jobs do |
+| `tests/test_api.py` | API client headers + retry configuration |
 | `tests/test_daemon.py` | daemon start/stop/status, PID file, liveness probe |
 | `tests/test_heartbeat.py` | heartbeat payload + posting |
 | `tests/test_job_events.py` | lifecycle event emission |
-| `tests/test_runner.py` | subprocess execution, output capture, failure handling |
-| `tests/test_nmap.py` | nmap target normalization + profile |
+| `tests/test_runner.py` | subprocess execution, timeouts, output capture, failures |
+| `tests/test_nmap.py` | nmap target normalization + profile + `run nmap` command |
 | `tests/test_status.py` | tool detection + status output |
 
 ## Lint, format, and types

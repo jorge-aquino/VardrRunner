@@ -1,6 +1,11 @@
 """
 Run a tool against targets fetched from VardrMap, then upload the results.
 Tools execute locally — scan traffic comes from the user's machine.
+
+Direct `run` commands share the same typed configs and tool handlers as backend
+jobs and pipelines: they resolve targets (with the richer inline/file sources),
+validate options through the handler's config, then reuse the handler's
+execute + upload. So `run nmap --timing 9` is rejected exactly like a job would be.
 """
 
 import datetime
@@ -9,16 +14,12 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from vardrrunner import api, config, runner
+from vardrrunner import api, config, configs, handlers, runner
+
+# Re-exported so existing call sites and tests can patch them here.
+from vardrrunner.targets import _is_wildcard, _resolve_targets  # noqa: F401
 
 console = Console()
-
-# Wildcard prefixes we refuse to scan directly.
-_WILDCARD_PREFIXES = ("*.", "*")
-
-
-def _is_wildcard(value: str) -> bool:
-    return any(value.startswith(p) for p in _WILDCARD_PREFIXES)
 
 
 def _make_run_dir() -> Path:
@@ -37,64 +38,10 @@ def _execute(run_callable):
         raise typer.Exit(1) from e
 
 
-def _resolve_targets(
-    client: api.VardrMapClient,
-    program_id: str,
-    scope: bool,
-    from_recon: bool,
-    target: str | None,
-    targets_file: Path | None,
-    status_code: int | None,
-    limit: int,
-) -> list[str]:
-    """Collect the target list from the chosen source."""
-    if target:
-        return [target]
-
-    if targets_file:
-        if not targets_file.exists():
-            console.print(f"[red]File not found:[/red] {targets_file}")
-            raise typer.Exit(1)
-        return [line.strip() for line in targets_file.read_text().splitlines() if line.strip()]
-
-    if scope:
-        raw = client.scope(program_id)
-        in_scope = raw.get("in", [])
-        resolved, skipped = [], []
-        for item in in_scope:
-            val = item.get("value", "")
-            if _is_wildcard(val):
-                skipped.append(val)
-            else:
-                resolved.append(val)
-        if skipped:
-            console.print(
-                "[yellow]Skipping wildcards (run subfinder first to enumerate hosts):[/yellow]"
-            )
-            for s in skipped:
-                console.print(f"  [dim]skip:[/dim] {s}")
-        return resolved
-
-    if from_recon:
-        items = client.recon(program_id, limit=limit, status_code=status_code)
-        targets = []
-        for item in items:
-            val = item.get("url") or item.get("host")
-            if val:
-                targets.append(val)
-        return targets
-
-    console.print(
-        "[red]No target source specified.[/red] Use --scope, --from-recon, --target, or --targets."
-    )
-    raise typer.Exit(1)
-
-
 def _confirm(targets: list[str], tool: str, yes: bool) -> None:
     """Show a dry-run preview and ask for confirmation unless --yes is passed."""
     console.print(f"\n[bold]Targets ({len(targets)}):[/bold]")
-    preview = targets[:10]
-    for t in preview:
+    for t in targets[:10]:
         console.print(f"  {t}")
     if len(targets) > 10:
         console.print(f"  [dim]… and {len(targets) - 10} more[/dim]")
@@ -104,6 +51,35 @@ def _confirm(targets: list[str], tool: str, yes: bool) -> None:
         if not confirmed:
             console.print("[dim]Aborted.[/dim]")
             raise typer.Exit(0)
+
+
+def _build_config(tool: str, raw: dict):
+    """Validate CLI options through the tool's typed config; exit on bad values."""
+    try:
+        return handlers.REGISTRY[tool].parse_config(raw)
+    except configs.ConfigError as e:
+        console.print(f"[red]Invalid options:[/red] {e}")
+        raise typer.Exit(1) from e
+
+
+def _finish(tool: str, client: api.VardrMapClient, program_id: str, targets, tool_cfg, run_dir):
+    """Execute a tool handler and upload its output — shared by every direct command."""
+    handler = handlers.REGISTRY[tool]
+    console.print(f"\nRunning {handler.running_label(targets, tool_cfg)}… → [dim]{run_dir}[/dim]")
+    output = _execute(lambda: handler.execute(targets, run_dir, tool_cfg))
+
+    if output is None or not output.exists() or output.stat().st_size == 0:
+        console.print("[yellow]No output produced — nothing to upload.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print("Uploading results…")
+    try:
+        summary = handler.upload(client, program_id, output)
+    except Exception as e:
+        console.print(f"[red]Upload failed:[/red] {e}")
+        console.print(f"Raw output saved at [dim]{output}[/dim]")
+        raise typer.Exit(1) from e
+    console.print(f"[green]Done.[/green] {summary}")
 
 
 def run_httpx(
@@ -129,99 +105,24 @@ def run_httpx(
         raise typer.Exit(0)
 
     _confirm(targets, "httpx", yes)
-
-    run_dir = _make_run_dir()
-    output = run_dir / "httpx.jsonl"
-    console.print(f"\nRunning httpx… output → [dim]{output}[/dim]")
-
-    rc = _execute(lambda: runner.run_httpx(targets, output))
-    if rc != 0:
-        console.print(f"[yellow]httpx exited with code {rc}[/yellow]")
-
-    if not output.exists() or output.stat().st_size == 0:
-        console.print("[yellow]No output produced — nothing to import.[/yellow]")
-        raise typer.Exit(0)
-
-    console.print("Uploading results…")
-    try:
-        result = client.import_file(program_id, "httpx", str(output))
-        count = result.get("import_record", {}).get("imported_count", "?")
-        console.print(f"[green]Done.[/green] Imported {count} result(s).")
-    except Exception as e:
-        console.print(f"[red]Upload failed:[/red] {e}")
-        console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1) from e
+    cfg = _build_config("httpx", {"limit": limit, "status_code": status_code})
+    _finish("httpx", client, program_id, targets, cfg, _make_run_dir())
 
 
-def run_subfinder(
-    program_id: str,
-    yes: bool = False,
-):
-    """Run subfinder against wildcard scope entries and upload results as recon (httpx targets)."""
+def run_subfinder(program_id: str, yes: bool = False):
+    """Run subfinder against wildcard scope entries and upload discovered hosts as recon."""
     runner.check_tool("subfinder")
     url, key = config.require_auth()
     client = api.VardrMapClient(url, key)
 
-    raw = client.scope(program_id)
-    in_scope = raw.get("in", [])
-
-    # Extract root domains from wildcard entries like *.example.com → example.com
-    domains = []
-    for item in in_scope:
-        val = item.get("value", "")
-        if _is_wildcard(val):
-            stripped = val.lstrip("*").lstrip(".")
-            if stripped:
-                domains.append(stripped)
-
+    cfg = _build_config("subfinder", {})
+    domains = handlers.REGISTRY["subfinder"].resolve_targets(client, program_id, "scope", cfg)
     if not domains:
         console.print("[yellow]No wildcard scope entries found.[/yellow]")
         raise typer.Exit(0)
 
-    console.print(f"\n[bold]Wildcard domains ({len(domains)}):[/bold]")
-    for d in domains:
-        console.print(f"  {d}")
-
-    if not yes:
-        confirmed = typer.confirm(
-            f"\nRun subfinder against {len(domains)} domain(s)?", default=False
-        )
-        if not confirmed:
-            console.print("[dim]Aborted.[/dim]")
-            raise typer.Exit(0)
-
-    run_dir = _make_run_dir()
-    output = run_dir / "subfinder.txt"
-    console.print(f"\nRunning subfinder… output → [dim]{output}[/dim]")
-
-    rc = _execute(lambda: runner.run_subfinder(domains, output))
-    if rc != 0:
-        console.print(f"[yellow]subfinder exited with code {rc}[/yellow]")
-
-    if not output.exists() or output.stat().st_size == 0:
-        console.print("[yellow]No subdomains discovered.[/yellow]")
-        raise typer.Exit(0)
-
-    hosts = [line.strip() for line in output.read_text().splitlines() if line.strip()]
-    console.print(f"Discovered [bold]{len(hosts)}[/bold] subdomain(s).")
-
-    # Convert plain hosts to httpx-compatible JSONL for import
-    import json as _json
-
-    jsonl_path = run_dir / "subfinder_httpx.jsonl"
-    with jsonl_path.open("w") as fh:
-        for host in hosts:
-            fh.write(_json.dumps({"host": host, "source": "subfinder"}) + "\n")
-
-    console.print("Uploading as httpx recon targets…")
-    try:
-        result = client.import_file(program_id, "httpx", str(jsonl_path))
-        count = result.get("import_record", {}).get("imported_count", "?")
-        console.print(f"[green]Done.[/green] Imported {count} host(s) as recon targets.")
-    except Exception as e:
-        console.print(f"[red]Upload failed:[/red] {e}")
-        console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1) from e
+    _confirm(domains, "subfinder", yes)
+    _finish("subfinder", client, program_id, domains, cfg, _make_run_dir())
 
 
 def run_nuclei(
@@ -249,31 +150,17 @@ def run_nuclei(
         raise typer.Exit(0)
 
     _confirm(targets, "nuclei", yes)
-
-    run_dir = _make_run_dir()
-    output = run_dir / "nuclei.jsonl"
-    label = f"severity={severity}" if severity else "all severities"
-    console.print(f"\nRunning nuclei ({label})… output → [dim]{output}[/dim]")
-
-    rc = _execute(
-        lambda: runner.run_nuclei(targets, output, severity=severity, templates=templates)
+    # Validates the severity filter (same as a job would) before any work.
+    cfg = _build_config(
+        "nuclei",
+        {
+            "limit": limit,
+            "status_code": status_code,
+            "severity": severity,
+            "templates": templates,
+        },
     )
-    if rc != 0:
-        console.print(f"[yellow]nuclei exited with code {rc}[/yellow]")
-
-    if not output.exists() or output.stat().st_size == 0:
-        console.print("[yellow]No findings produced — nothing to import.[/yellow]")
-        raise typer.Exit(0)
-
-    console.print("Uploading results…")
-    try:
-        result = client.import_file(program_id, "nuclei", str(output))
-        count = result.get("import_record", {}).get("imported_count", "?")
-        console.print(f"[green]Done.[/green] Imported {count} finding(s).")
-    except Exception as e:
-        console.print(f"[red]Upload failed:[/red] {e}")
-        console.print(f"Raw output saved at [dim]{output}[/dim]")
-        raise typer.Exit(1) from e
+    _finish("nuclei", client, program_id, targets, cfg, _make_run_dir())
 
 
 def run_nmap(
@@ -302,34 +189,6 @@ def run_nmap(
         raise typer.Exit(0)
 
     _confirm(targets, "nmap", yes)
-
-    run_dir = _make_run_dir()
-    xml_path = run_dir / "nmap.xml"
-    console.print(
-        f"\nRunning nmap (--top-ports {top_ports} -T{timing})… output → [dim]{xml_path}[/dim]"
-    )
-
-    rc = _execute(lambda: runner.run_nmap(targets, xml_path, top_ports=top_ports, timing=timing))
-    if rc != 0:
-        console.print(f"[yellow]nmap exited with code {rc}[/yellow]")
-
-    if not xml_path.exists() or xml_path.stat().st_size == 0:
-        console.print("[yellow]No nmap output produced.[/yellow]")
-        raise typer.Exit(0)
-
-    services = runner.parse_nmap_xml(xml_path)
-    console.print(f"Parsed [bold]{len(services)}[/bold] open port(s).")
-    if not services:
-        console.print("[yellow]No open ports found.[/yellow]")
-        raise typer.Exit(0)
-
-    console.print("Uploading services…")
-    try:
-        result = client.create_services(program_id, services)
-        created = result.get("created", 0)
-        updated = result.get("updated", 0)
-        console.print(f"[green]Done.[/green] {created} new, {updated} updated service(s).")
-    except Exception as e:
-        console.print(f"[red]Upload failed:[/red] {e}")
-        console.print(f"Raw output saved at [dim]{xml_path}[/dim]")
-        raise typer.Exit(1) from e
+    # Validates timing (0-4) and top_ports up front — `--timing 9` is rejected, not clamped.
+    cfg = _build_config("nmap", {"top_ports": top_ports, "timing": timing, "limit": limit})
+    _finish("nmap", client, program_id, targets, cfg, _make_run_dir())
