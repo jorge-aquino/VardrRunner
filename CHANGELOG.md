@@ -6,6 +6,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+
+## [0.20.0] — 2026-06-17
+Secure credentials + broader recon coverage. See
+[changelog/v0.20.0.md](changelog/v0.20.0.md) for the rollup.
+
 ### Added
 - **dnsx + naabu tools.** Two new recon tools via the handler registry:
   - `dnsx` (`vardrrunner run dnsx`) resolves hosts and uploads only the **resolvable** ones as

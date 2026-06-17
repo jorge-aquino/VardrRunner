@@ -115,7 +115,7 @@ pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests              # 210 tests; all subprocess + HTTP calls are mocked
+pytest tests              # 222 tests; all subprocess + HTTP calls are mocked
 ```
 CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,

@@ -27,7 +27,7 @@ This is not "just another CLI." It is built to a product-grade bar — see the
   - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
   - `commands/` — one module per command group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs` (job lifecycle), `pipeline`, `programs`, `run`, `status`
-- `tests/` — pytest suite (210 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
+- `tests/` — pytest suite (222 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
 - `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
 - `docs/adr/` — Architecture Decision Records, one per non-trivial decision
 - `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index
@@ -73,7 +73,7 @@ Documentation-only, test-only, and pure-refactor commits may note
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests --cov=vardrrunner --cov-fail-under=60   # all 210 must pass
+pytest tests --cov=vardrrunner --cov-fail-under=60   # all 222 must pass
 ```
 Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
 
