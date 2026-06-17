@@ -54,6 +54,12 @@ def heartbeat():
 
 
 @app.command()
+def logout():
+    """Remove stored credentials (keychain + config file); keep the API URL."""
+    auth.logout()
+
+
+@app.command()
 def whoami():
     """Show the identity tied to the configured API key."""
     auth.whoami()

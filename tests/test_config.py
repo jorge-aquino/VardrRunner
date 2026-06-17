@@ -11,6 +11,8 @@ def tmp_config(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path / "runs")
     for var in (config.ENV_API_URL, config.ENV_API_KEY, config.ENV_ALLOW_INSECURE):
         monkeypatch.delenv(var, raising=False)
+    # Never touch the real OS keychain in tests.
+    monkeypatch.setattr("vardrrunner.keychain.get_key", lambda url: None)
     yield tmp_path
 
 

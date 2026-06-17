@@ -6,6 +6,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+### Added
+- **OS keychain credential storage.** `vardrrunner login` now stores your API key in the OS
+  keychain (macOS Keychain, Windows Credential Locker, Linux Secret Service) by default, with
+  the backend URL kept in `config.json`. Key resolution is `VARDRMAP_API_KEY` env > keychain >
+  legacy config file. On a headless box with no keyring backend it falls back to the plaintext
+  config file with a warning, so servers keep working. See
+  [docs/adr/0004-credential-storage.md](docs/adr/0004-credential-storage.md).
+- **`vardrrunner logout`** — removes the stored key from the keychain and config file, leaves
+  the API URL in place, and warns if `VARDRMAP_API_KEY` is still set in the environment.
+### Changed
+- `doctor` reports the **credential source** (`environment` / `keychain` / `config file`)
+  without exposing the secret, and only warns about config-file permissions when the file
+  actually holds a plaintext key.
 
 ## [0.19.0] — 2026-06-17
 First feature release from the standalone repo. See

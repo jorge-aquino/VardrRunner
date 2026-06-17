@@ -13,7 +13,6 @@ auth, daemon PID health, run-dir writability, free disk, tool versions, and
 per-pipeline readiness. `--json` emits a machine-readable report.
 """
 
-import os
 import platform
 import shutil
 import stat
@@ -53,21 +52,18 @@ class Check:
 
 def _check_credentials() -> list[Check]:
     url = config.get_api_url()
-    key = config.get_api_key()
-    if not url or not key:
+    source = config.credential_source()  # never the secret itself
+    if not url or source is None:
         return [
             Check(
                 "credentials",
                 Health.FAIL,
-                "no API URL/key configured",
+                "no API key configured",
                 "Run `vardrrunner login vardrmap`, or set VARDRMAP_URL and VARDRMAP_API_KEY.",
             )
         ]
 
-    using_env = bool(os.environ.get(config.ENV_API_URL) or os.environ.get(config.ENV_API_KEY))
-    source = "environment" if using_env else "config file"
-    checks = [Check("credentials", Health.OK, f"configured (source: {source})")]
-
+    checks = [Check("credentials", Health.OK, f"API key source: {source}")]
     try:
         config.validate_api_url(url)
         checks.append(Check("backend url", Health.OK, url))
@@ -86,16 +82,22 @@ def _check_credentials() -> list[Check]:
 def _check_permissions() -> Check:
     path = config.CONFIG_FILE
     if not path.exists():
-        return Check("config permissions", Health.OK, "no config file (using env or none)")
-    if platform.system() == "Windows":
-        return Check("config permissions", Health.OK, "not enforced on Windows")
+        return Check("config permissions", Health.OK, "no config file")
+    # Only a config file holding a plaintext key is sensitive; URL-only is fine.
+    has_secret = "api_key" in config.load()
+    if platform.system() == "Windows" or not has_secret:
+        return Check(
+            "config permissions",
+            Health.OK,
+            "no plaintext key in file" if not has_secret else "not enforced on Windows",
+        )
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         return Check(
             "config permissions",
             Health.WARN,
-            f"{oct(mode)} — group/other can read your API key",
-            f"chmod 600 {path}",
+            f"{oct(mode)} — group/other can read your plaintext API key",
+            f"`chmod 600 {path}`, or `vardrrunner login` to move the key into the keychain",
         )
     return Check("config permissions", Health.OK, oct(mode))
 

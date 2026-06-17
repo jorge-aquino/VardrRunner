@@ -19,14 +19,15 @@ This is not "just another CLI." It is built to a product-grade bar — see the
 - `vardrrunner/` — the Python package (source of truth)
   - `cli.py` — Typer app; wires every sub-command
   - `api.py` — thin HTTP client (`requests.Session`); the only thing that talks to a backend
-  - `config.py` — resolves credentials (env over `~/.vardrmap/config.json`); enforces HTTPS (holds the API key — treat as secret)
+  - `config.py` — resolves credentials (env > keychain > `~/.vardrmap/config.json`); enforces HTTPS
+  - `keychain.py` — OS keychain wrapper (`keyring`); stores the API key, degrades gracefully with no backend
   - `configs.py` — typed, validated tool configs + `JobEnvelope` (frozen dataclasses; bad payload → `ConfigError`)
   - `targets.py` — target resolution (scope/recon/inline/file); shared by `run` commands and handlers
   - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; **add a tool here** (see ADR 0002)
   - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
   - `commands/` — one module per command group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs` (job lifecycle), `pipeline`, `programs`, `run`, `status`
-- `tests/` — pytest suite (196 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
+- `tests/` — pytest suite (210 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
 - `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
 - `docs/adr/` — Architecture Decision Records, one per non-trivial decision
 - `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index
@@ -38,12 +39,13 @@ This is not "just another CLI." It is built to a product-grade bar — see the
 - Run the full test suite (and the linter) before every commit — keep the suite green
 - Every behavior-changing change updates docs **and** `CHANGELOG.md` in the same commit
 - The runner talks to backends **only** through `api.py` — no scattered HTTP calls
-- Never log, print, or commit the API key; `~/.vardrmap/config.json` is a secret
+- Never log, print, or commit the API key; it lives in the OS keychain (or env / fallback config file)
 - Tools the runner shells out to are external input — validate/normalize args, never build shell strings from unsanitized server data
 
 ## Security expectations
-- The API key lives in `~/.vardrmap/config.json` (0600 on Unix) or the `VARDRMAP_API_KEY`
-  env var; never echo it
+- The API key lives in the **OS keychain** by default (env `VARDRMAP_API_KEY` and a legacy
+  plaintext config-file fallback also supported); resolution is env > keychain > file. Never
+  echo it. The config file normally holds only the backend URL.
 - The backend URL must be HTTPS (except `localhost`) so the key is never sent in cleartext;
   `config.validate_api_url` enforces this at login and on every authenticated call
 - Treat all data from the backend as untrusted: validate job payloads, normalize targets
@@ -71,7 +73,7 @@ Documentation-only, test-only, and pure-refactor commits may note
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests --cov=vardrrunner --cov-fail-under=60   # all 196 must pass
+pytest tests --cov=vardrrunner --cov-fail-under=60   # all 210 must pass
 ```
 Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
 
@@ -81,13 +83,14 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1     # Windows
 pip install -e ".[dev]"         # installs the `vardrrunner` command + dev tools
 
-vardrrunner login vardrmap      # stores api_url + api_key in ~/.vardrmap/config.json
+vardrrunner login vardrmap      # key → OS keychain; backend URL → ~/.vardrmap/config.json
 vardrrunner heartbeat           # confirm connectivity
 vardrrunner daemon start        # continuous worker: polls jobs + heartbeats
 ```
 
 ## Command surface (see docs/cli.md for detail)
-- `login vardrmap` — authenticate and persist config
+- `login vardrmap` — authenticate; store the key in the OS keychain
+- `logout` — remove stored credentials (keychain + config file), keep the URL
 - `run httpx|subfinder|nuclei|nmap` — run a tool locally, upload results
 - `pipeline list|run <name>` — chain tools into one recon workflow (subfinder → httpx → nuclei)
 - `import nuclei|httpx|ffuf` — import an existing output file

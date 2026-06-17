@@ -66,7 +66,7 @@ All three install the `vardrrunner` command.
 
 ## Quick start
 ```bash
-vardrrunner login vardrmap     # prompts for backend URL + API key, saves to ~/.vardrmap/config.json
+vardrrunner login vardrmap     # prompts for backend URL + API key; key goes to your OS keychain
 vardrrunner status             # show config, version, and which tools are detected
 vardrrunner heartbeat          # confirm the backend can see this machine
 vardrrunner daemon start       # run the continuous worker (poll jobs + heartbeat)
@@ -83,12 +83,14 @@ vardrrunner import nuclei --program 12 -f out.jsonl
 See **[docs/cli.md](docs/cli.md)** for the full command reference.
 
 ## Configuration
-Config lives at `~/.vardrmap/config.json` and holds your `api_url` and `api_key`.
-**Treat this file as a secret** — it contains your key in plaintext (permissions are
-restricted to the owner on Unix).
 
-For containers, CI, or a headless VPS, set credentials via environment variables instead
-(they take precedence over the file):
+**Desktop / dev:** `vardrrunner login` stores your API key in the **OS keychain** (macOS
+Keychain, Windows Credential Locker, Linux Secret Service) — no plaintext key on disk. The
+backend URL is kept in `~/.vardrmap/config.json`. Run `vardrrunner logout` to remove it.
+
+**CI / servers / containers:** set credentials via environment variables (no keychain
+needed). The key resolves in this order — **`VARDRMAP_API_KEY` env → OS keychain → config
+file**:
 
 | Variable | Purpose |
 |----------|---------|
@@ -113,7 +115,7 @@ pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests              # 196 tests; all subprocess + HTTP calls are mocked
+pytest tests              # 210 tests; all subprocess + HTTP calls are mocked
 ```
 CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,
