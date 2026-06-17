@@ -11,13 +11,24 @@ vardrrunner [COMMAND] [SUBCOMMAND] [OPTIONS]
 ---
 
 ## `login`
-Authenticate to a Vardr product and persist credentials to `~/.vardrmap/config.json`.
+Authenticate to a Vardr product. Prompts for the backend URL and API key, verifies the key,
+then stores it in the **OS keychain** (macOS Keychain / Windows Credential Locker / Linux
+Secret Service). The backend URL is kept in `~/.vardrmap/config.json`. On a machine with no
+keyring backend, it falls back to the plaintext config file with a warning.
 
 ```bash
 vardrrunner login vardrmap
 ```
-Prompts for the backend URL and API key. The key is stored locally (0600 on Unix) and is
-treated as a secret.
+
+Key resolution order at runtime: **`VARDRMAP_API_KEY` env → keychain → config file**.
+
+## `logout`
+Remove the stored API key from the keychain and config file. The backend URL is left in
+place (re-authenticate with `login`); warns if `VARDRMAP_API_KEY` is still set.
+
+```bash
+vardrrunner logout
+```
 
 ---
 

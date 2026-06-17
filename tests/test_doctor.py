@@ -17,6 +17,8 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr("vardrrunner.config.RUNS_DIR", tmp_path / "runs")
     for var in ("VARDRMAP_URL", "VARDRMAP_API_KEY", "VARDRRUNNER_ALLOW_INSECURE"):
         monkeypatch.delenv(var, raising=False)
+    # Never touch the real OS keychain in tests.
+    monkeypatch.setattr("vardrrunner.keychain.get_key", lambda url: None)
     yield
 
 

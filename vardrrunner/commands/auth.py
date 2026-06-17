@@ -1,8 +1,10 @@
+import os
+
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from vardrrunner import api, config
+from vardrrunner import api, config, keychain
 
 console = Console()
 app = typer.Typer(help="Authentication commands.")
@@ -38,14 +40,46 @@ def login_vardrmap(
         console.print(f"[red]Authentication failed:[/red] {e}")
         raise typer.Exit(1) from e
 
-    config.save({"api_url": api_url, "api_key": api_key})
     console.print(
         f"[green]Logged in[/green] as [bold]{user.get('username') or user.get('github_id')}[/bold]"
     )
-    console.print(f"Config saved to [dim]{config.CONFIG_FILE}[/dim]")
-    console.print(
-        "[yellow]Treat this file like a secret — it contains your API key in plaintext.[/yellow]"
-    )
+
+    # Prefer the OS keychain; the config file (URL only) makes the key resolvable.
+    if keychain.available() and keychain.set_key(api_url, api_key):
+        config.save_url(api_url)
+        console.print("API key stored in your OS keychain.")
+    else:
+        config.save({"api_url": api_url, "api_key": api_key})
+        console.print(
+            f"[yellow]No OS keychain available — stored the key in plaintext at "
+            f"{config.CONFIG_FILE}.[/yellow] Use VARDRMAP_API_KEY on servers instead."
+        )
+
+
+def logout():
+    """Remove the stored API key (keychain + config file); leave the API URL in place."""
+    url = config.get_api_url()
+    removed = []
+    if url and keychain.delete_key(url):
+        removed.append("keychain")
+    if config.clear_file_key():
+        removed.append("config file")
+
+    if removed:
+        console.print(f"[green]Logged out.[/green] Removed API key from: {', '.join(removed)}.")
+    else:
+        console.print("[dim]No stored API key found.[/dim]")
+
+    if os.environ.get(config.ENV_API_KEY):
+        console.print(
+            f"[yellow]Note:[/yellow] {config.ENV_API_KEY} is still set in your environment — "
+            "unset it to fully log out."
+        )
+    if url:
+        console.print(
+            f"API URL [dim]{url}[/dim] left in place. Re-authenticate with "
+            "[bold]vardrrunner login vardrmap[/bold]."
+        )
 
 
 def whoami():

@@ -24,7 +24,8 @@ either direction.
 |------|----------------|
 | `vardrrunner/cli.py` | Typer application; defines command groups and wires them together. Thin — delegates to `commands/`. |
 | `vardrrunner/api.py` | The **only** module that performs HTTP. A `requests.Session` wrapper exposing typed methods; raises `requests.HTTPError` on non-2xx. Retries transient failures (connection errors, 429/5xx) with exponential backoff on idempotent methods only (never POST/PATCH); sends a `User-Agent: vardrrunner/<version>` header. |
-| `vardrrunner/config.py` | Resolve credentials (env `VARDRMAP_URL`/`VARDRMAP_API_KEY` over `~/.vardrmap/config.json`); restrict file permissions; `validate_api_url()` enforces HTTPS; `require_auth()` guards commands. |
+| `vardrrunner/config.py` | Resolve credentials (key: env > keychain > config file; URL: env > file); `validate_api_url()` enforces HTTPS; `credential_source()` for diagnostics; `require_auth()` guards commands. |
+| `vardrrunner/keychain.py` | OS keychain wrapper (`keyring`) for the API key. Degrades gracefully (returns None/False) when no backend is present, so servers fall back to env/file. |
 | `vardrrunner/configs.py` | Typed, validated tool configs (`HttpxConfig`, `NucleiConfig`, `NmapConfig`, `SubfinderConfig`). Raw backend dicts are parsed into frozen dataclasses up front; invalid values raise `ConfigError` and fail the job fast. |
 | `vardrrunner/targets.py` | Target resolution (scope/recon/inline/file → list of targets). Shared by the `run` commands and the handlers — lives here to avoid an import cycle. |
 | `vardrrunner/handlers.py` | One `ToolHandler` per job type (`parse_config`/`resolve_targets`/`execute`/`upload`) plus the `REGISTRY`. Adding a tool is a one-file change here (see ADR 0002). |
@@ -70,13 +71,16 @@ Windows liveness is checked via a ctypes probe (plain `os.kill` on Windows is
 
 ## Configuration & secrets
 All local state lives under `~/.vardrmap/`:
-- `config.json` — `api_url` + `api_key` (secret; 0600 on Unix)
+- `config.json` — the backend `api_url` (normally **no secret**; only holds a plaintext
+  `api_key` in the no-keychain fallback)
 - `runs/` — timestamped tool output directories
 
-Credentials may instead come from `VARDRMAP_URL` / `VARDRMAP_API_KEY` env vars, which take
-precedence over the file (useful for containers, CI, and headless VPS daemons). The backend
-URL must be HTTPS (except `localhost`, or with `VARDRRUNNER_ALLOW_INSECURE=1`) so the key is
-never sent in cleartext. The API key is the runner's only credential; it is never logged or printed.
+The **API key** resolves from `VARDRMAP_API_KEY` env > **OS keychain** (`keyring`) > config
+file. `vardrrunner login` stores it in the keychain by default; `logout` removes it. On a
+headless box with no keyring backend, login falls back to the plaintext config file with a
+warning (servers should use the env var). The backend URL must be HTTPS (except `localhost`,
+or with `VARDRRUNNER_ALLOW_INSECURE=1`) so the key is never sent in cleartext. The API key is
+the runner's only credential; it is never logged or printed.
 
 ## Design invariants
 - **All HTTP goes through `api.py`.** No ad-hoc requests elsewhere.

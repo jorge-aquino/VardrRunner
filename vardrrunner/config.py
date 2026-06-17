@@ -1,6 +1,10 @@
 """
-Config is stored at ~/.vardrmap/config.json.
-Treat this file like a secret — it contains your API key in plaintext.
+Local config + credential resolution.
+
+The backend URL (not a secret) lives in ~/.vardrmap/config.json. The API key is
+resolved from, in order: the VARDRMAP_API_KEY env var, the OS keychain, then a
+legacy plaintext key in the config file. `vardrrunner login` stores the key in the
+keychain when one is available, falling back to the config file otherwise.
 """
 
 import json
@@ -8,6 +12,8 @@ import os
 import stat
 from pathlib import Path
 from urllib.parse import urlparse
+
+from vardrrunner import keychain
 
 CONFIG_DIR = Path.home() / ".vardrmap"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -59,8 +65,48 @@ def get_api_url() -> str | None:
 
 
 def get_api_key() -> str | None:
-    """Resolved API key — the VARDRMAP_API_KEY env var takes precedence over the config file."""
-    return os.environ.get(ENV_API_KEY) or load().get("api_key")
+    """Resolved API key — precedence: VARDRMAP_API_KEY env > OS keychain > config file."""
+    env = os.environ.get(ENV_API_KEY)
+    if env:
+        return env
+    url = get_api_url()
+    if url:
+        stored = keychain.get_key(url)
+        if stored:
+            return stored
+    return load().get("api_key")
+
+
+def credential_source() -> str | None:
+    """Where the API key resolves from, without revealing it: 'environment',
+    'keychain', 'config file', or None if no key is configured."""
+    if os.environ.get(ENV_API_KEY):
+        return "environment"
+    url = get_api_url()
+    if url and keychain.get_key(url):
+        return "keychain"
+    if load().get("api_key"):
+        return "config file"
+    return None
+
+
+def save_url(api_url: str) -> None:
+    """Persist only the API URL (no secret) — used when the key lives in the keychain.
+    Drops any legacy plaintext key so it can't linger after moving to the keychain."""
+    data = load()
+    data["api_url"] = api_url
+    data.pop("api_key", None)
+    save(data)
+
+
+def clear_file_key() -> bool:
+    """Remove a plaintext api_key from the config file. Returns True if one was removed."""
+    data = load()
+    if "api_key" in data:
+        data.pop("api_key")
+        save(data)
+        return True
+    return False
 
 
 def validate_api_url(url: str) -> str:
