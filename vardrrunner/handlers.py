@@ -189,7 +189,78 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
         return f"imported {count} subdomain(s) as recon targets"
 
 
+class DnsxHandler(ToolHandler[configs.DnsxConfig]):
+    tool = "dnsx"
+
+    def parse_config(self, cfg: dict) -> configs.DnsxConfig:
+        return configs.DnsxConfig.from_dict(cfg)
+
+    def resolve_targets(self, client, program_id, target_source, config):
+        raw = _resolve_standard(client, program_id, target_source, config)
+        # dnsx resolves bare hostnames, not URLs.
+        return list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
+
+    def running_label(self, targets, config):
+        return f"dnsx on {len(targets)} host(s)"
+
+    def execute(self, targets, run_dir, config):
+        out = run_dir / "dnsx.txt"
+        runner.run_dnsx(targets, out, timeout=config.timeout)
+        if not out.exists() or out.stat().st_size == 0:
+            return None
+        hosts = [line.strip() for line in out.read_text().splitlines() if line.strip()]
+        if not hosts:
+            return None
+        # Resolvable hosts become recon targets (httpx-compatible JSONL).
+        jsonl_path = run_dir / "dnsx_httpx.jsonl"
+        with jsonl_path.open("w") as fh:
+            for host in hosts:
+                fh.write(json.dumps({"host": host, "source": "dnsx"}) + "\n")
+        return jsonl_path
+
+    def upload(self, client, program_id, output):
+        result = client.import_file(program_id, "httpx", str(output))
+        count = result.get("import_record", {}).get("imported_count", "?")
+        return f"imported {count} resolvable host(s)"
+
+
+class NaabuHandler(ToolHandler[configs.NaabuConfig]):
+    tool = "naabu"
+
+    def parse_config(self, cfg: dict) -> configs.NaabuConfig:
+        return configs.NaabuConfig.from_dict(cfg)
+
+    def resolve_targets(self, client, program_id, target_source, config):
+        raw = _resolve_standard(client, program_id, target_source, config)
+        return list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
+
+    def running_label(self, targets, config):
+        return f"naabu --top-ports {config.top_ports} on {len(targets)} host(s)"
+
+    def execute(self, targets, run_dir, config):
+        out = run_dir / "naabu.json"
+        runner.run_naabu(targets, out, top_ports=config.top_ports, timeout=config.timeout)
+        return out
+
+    def upload(self, client, program_id, output):
+        services = runner.parse_naabu_json(output)
+        if not services:
+            return "no open ports found"
+        result = client.create_services(program_id, services)
+        created = result.get("created", 0)
+        updated = result.get("updated", 0)
+        return f"{created} new, {updated} updated service(s)"
+
+
 # Registry: job type → handler. Add a tool by adding a handler here.
 REGISTRY: dict[str, ToolHandler[Any]] = {
-    h.tool: h for h in (HttpxHandler(), NucleiHandler(), NmapHandler(), SubfinderHandler())
+    h.tool: h
+    for h in (
+        HttpxHandler(),
+        NucleiHandler(),
+        NmapHandler(),
+        SubfinderHandler(),
+        DnsxHandler(),
+        NaabuHandler(),
+    )
 }

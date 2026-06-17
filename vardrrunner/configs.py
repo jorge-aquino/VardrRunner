@@ -150,3 +150,31 @@ class SubfinderConfig:
     @classmethod
     def from_dict(cls, cfg: dict) -> "SubfinderConfig":
         return cls(timeout=_opt_int(cfg, "timeout", minimum=1))
+
+
+@dataclass(frozen=True)
+class DnsxConfig:
+    limit: int = 500
+    timeout: int | None = None
+
+    @classmethod
+    def from_dict(cls, cfg: dict) -> "DnsxConfig":
+        return cls(
+            limit=_req_int(cfg, "limit", 500, minimum=1),
+            timeout=_opt_int(cfg, "timeout", minimum=1),
+        )
+
+
+@dataclass(frozen=True)
+class NaabuConfig:
+    top_ports: int = 100
+    limit: int = 500
+    timeout: int | None = None
+
+    @classmethod
+    def from_dict(cls, cfg: dict) -> "NaabuConfig":
+        return cls(
+            top_ports=_req_int(cfg, "top_ports", 100, minimum=1, maximum=65535),
+            limit=_req_int(cfg, "limit", 500, minimum=1),
+            timeout=_opt_int(cfg, "timeout", minimum=1),
+        )

@@ -87,6 +87,26 @@ def test_subfinder_timeout():
     assert configs.SubfinderConfig.from_dict({}).timeout is None
 
 
+# --- dnsx / naabu -------------------------------------------------------------
+
+
+def test_dnsx_defaults_and_validation():
+    assert configs.DnsxConfig.from_dict({}).limit == 500
+    with pytest.raises(ConfigError):
+        configs.DnsxConfig.from_dict({"limit": 0})
+
+
+def test_naabu_defaults():
+    c = configs.NaabuConfig.from_dict({})
+    assert (c.top_ports, c.limit) == (100, 500)
+
+
+@pytest.mark.parametrize("top_ports", [0, 70000])
+def test_naabu_top_ports_bounds(top_ports):
+    with pytest.raises(ConfigError):
+        configs.NaabuConfig.from_dict({"top_ports": top_ports})
+
+
 # --- job envelope -------------------------------------------------------------
 
 

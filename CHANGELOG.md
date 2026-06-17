@@ -7,6 +7,13 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 ### Added
+- **dnsx + naabu tools.** Two new recon tools via the handler registry:
+  - `dnsx` (`vardrrunner run dnsx`) resolves hosts and uploads only the **resolvable** ones as
+    recon targets, so later httpx/nuclei passes don't waste time on dead names.
+  - `naabu` (`vardrrunner run naabu`) does a fast top-ports scan and uploads open ports to the
+    services API (`source: "naabu"`).
+  - Two new pipelines: `deep` (subfinder → dnsx → httpx → nuclei) and `ports`
+    (subfinder → dnsx → naabu). `doctor`/`status`/heartbeat pick up both tools automatically.
 - **OS keychain credential storage.** `vardrrunner login` now stores your API key in the OS
   keychain (macOS Keychain, Windows Credential Locker, Linux Secret Service) by default, with
   the backend URL kept in `config.json`. Key resolution is `VARDRMAP_API_KEY` env > keychain >

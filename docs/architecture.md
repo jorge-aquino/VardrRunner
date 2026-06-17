@@ -32,7 +32,7 @@ either direction.
 | `vardrrunner/pipelines.py` | Named recon pipelines — ordered lists of `Stage(tool, source)`. Stages reference handlers; the next stage pulls the prior stage's uploaded results via the recon source. |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
-| `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei|nmap` — execute one tool, upload results. |
+| `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei|nmap|dnsx|naabu` — execute one tool, upload results (shares the typed-config + handler path). |
 | `vardrrunner/commands/imports.py` | `import nuclei|httpx|ffuf` — push an existing output file. |
 | `vardrrunner/commands/jobs.py` | `jobs list|run` — owns the uniform job *lifecycle* (`_execute_one`): capability → config → targets → claim → events → upload → done/fail, delegating specifics to a `handlers` registry entry. |
 | `vardrrunner/commands/pipeline.py` | `pipeline list|run` — runs a `pipelines` chain stage by stage (resolve → execute → upload), each stage handing off to the next via the recon store. |

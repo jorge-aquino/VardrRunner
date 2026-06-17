@@ -191,6 +191,50 @@ def test_run_nuclei_uses_arg_list(tmp_path):
         assert "high,critical" in args
 
 
+def test_run_dnsx_uses_arg_list(tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        runner.run_dnsx(["a.example.com"], tmp_path / "out.txt")
+        args = mock_run.call_args[0][0]
+        assert args[0] == "dnsx" and "-l" in args and "-silent" in args
+
+
+def test_run_naabu_uses_arg_list(tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        runner.run_naabu(["a.example.com"], tmp_path / "out.json", top_ports=50)
+        args = mock_run.call_args[0][0]
+        assert args[0] == "naabu" and "-json" in args
+        assert "-top-ports" in args and "50" in args
+
+
+def test_parse_naabu_json(tmp_path):
+    f = tmp_path / "naabu.json"
+    f.write_text(
+        '{"host":"a.example.com","ip":"1.2.3.4","port":443,"protocol":"tcp"}\n'
+        "\n"  # blank line ignored
+        "not-json\n"  # malformed line ignored
+        '{"ip":"5.6.7.8","port":80}\n'  # host falls back to ip; protocol defaults tcp
+    )
+    services = runner.parse_naabu_json(f)
+    assert len(services) == 2
+    assert services[0] == {
+        "host": "a.example.com",
+        "port": 443,
+        "protocol": "tcp",
+        "service_name": "",
+        "product": "",
+        "version": "",
+        "state": "open",
+        "source": "naabu",
+    }
+    assert services[1]["host"] == "5.6.7.8" and services[1]["protocol"] == "tcp"
+
+
+def test_parse_naabu_json_missing_file(tmp_path):
+    assert runner.parse_naabu_json(tmp_path / "nope.json") == []
+
+
 # ---------------------------------------------------------------------------
 # Tool timeouts
 # ---------------------------------------------------------------------------
