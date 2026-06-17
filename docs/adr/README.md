@@ -14,3 +14,4 @@ the way it does.
 |-----|-------|--------|
 | [0001](0001-extract-vardrrunner-from-vardrmap.md) | Extract VardrRunner from the VardrMap monorepo | Accepted |
 | [0002](0002-tool-handler-registry.md) | Tool-handler registry for job execution | Accepted |
+| [0003](0003-distribution-and-release.md) | Distribution and release process | Accepted |

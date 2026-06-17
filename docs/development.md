@@ -71,11 +71,18 @@ Config lives in `pyproject.toml` (`[tool.ruff]`, `[tool.mypy]`).
 6. Open a PR; CI must pass before merge.
 
 ## Releasing
-1. Bump `__version__` in `vardrrunner/__init__.py` — the **single source of truth**
-   (`pyproject.toml` reads it dynamically). The heartbeat reports this version to the backend.
-2. Move `Unreleased` notes into a dated version section in `CHANGELOG.md`; add a
-   `changelog/vX.Y.Z.md` detail note.
-3. Tag the release (`git tag vX.Y.Z`).
+Releases are **tag-driven** — pushing a `vX.Y.Z` tag runs `release.yml` (build → SBOM →
+provenance attestation → GitHub Release, with opt-in PyPI). See
+[ADR 0003](adr/0003-distribution-and-release.md).
+
+1. In a PR: bump `__version__` in `vardrrunner/__init__.py` — the **single source of truth**
+   (`pyproject.toml` reads it dynamically; the heartbeat reports it to the backend).
+2. Roll `Unreleased` into a dated `## [X.Y.Z]` section in `CHANGELOG.md`; add a
+   `changelog/vX.Y.Z.md` rollup note.
+3. Merge the PR, then tag `main` and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. The release workflow publishes a GitHub Release with the wheel, sdist, and SBOM.
+   **PyPI** is opt-in: configure a [trusted publisher](https://docs.pypi.org/trusted-publishers/)
+   for this repo's `release.yml` and set the repo variable `PYPI_PUBLISH=true`.
 
 ## Configuration during development
 The CLI reads/writes `~/.vardrmap/config.json`. To point at a local backend:

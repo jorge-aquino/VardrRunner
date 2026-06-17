@@ -39,17 +39,30 @@ results, and heartbeats so the backend always knows which machines are online.
 - A VardrSec backend URL and an API key (`vmap_…` for VardrMap)
 
 ## Install
+
+**From PyPI** (once published) — recommended via [pipx](https://pipx.pypa.io) for an isolated CLI:
+```bash
+pipx install vardrrunner      # or: pip install vardrrunner
+```
+
+**From a GitHub Release** (works today, before PyPI) — grab the wheel from the
+[latest release](https://github.com/jorge-aquino/VardrRunner/releases) (each is built in CI
+with a CycloneDX SBOM and a build-provenance attestation):
+```bash
+pipx install ./vardrrunner-<version>-py3-none-any.whl
+```
+
+**From source** (development):
 ```bash
 git clone https://github.com/jorge-aquino/VardrRunner.git
 cd VardrRunner
 python -m venv venv
-# Windows
-.\venv\Scripts\Activate.ps1
-# macOS/Linux
-source venv/bin/activate
-pip install -e .
+.\venv\Scripts\Activate.ps1     # Windows  (macOS/Linux: source venv/bin/activate)
+pip install -e ".[dev]"
 ```
-This installs the `vardrrunner` command into the active environment.
+All three install the `vardrrunner` command.
+
+> Homebrew / Scoop formulae are planned once there's demand; until then use pipx or the release wheel.
 
 ## Quick start
 ```bash

@@ -6,6 +6,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
+
+## [0.19.0] — 2026-06-17
+First feature release from the standalone repo. See
+[changelog/v0.19.0.md](changelog/v0.19.0.md) for the rollup.
+
 ### Added
 - **`vardrrunner doctor`.** A deep preflight for unattended/VPS use, distinct from `status`'s
   quick glance: it exits 0 only when the runner is healthy enough to work, exits non-zero on
