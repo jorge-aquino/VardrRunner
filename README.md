@@ -27,6 +27,9 @@ results, and heartbeats so the backend always knows which machines are online.
   backend's Bridge shows live machine status
 - **Live job events** — emits `started → targets_resolved → running → uploaded → done/failed`
   so the backend Terminal shows real-time logs
+- **Preflight (`doctor`)** — one command validates the whole machine (creds, URL, perms,
+  auth, daemon, disk, tools, pipelines) and exits non-zero on actionable failures, for
+  scripting unattended/VPS provisioning
 - **Safe by default** — missing tools fail the job loudly, targets are normalized before
   use, and the API key is stored locally with restrictive permissions
 
@@ -97,7 +100,7 @@ pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests              # 188 tests; all subprocess + HTTP calls are mocked
+pytest tests              # 196 tests; all subprocess + HTTP calls are mocked
 ```
 CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,

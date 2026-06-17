@@ -12,6 +12,7 @@ from rich.console import Console
 
 from vardrrunner.commands import auth, imports, jobs, programs, run
 from vardrrunner.commands import daemon as daemon_cmd
+from vardrrunner.commands import doctor as doctor_cmd
 from vardrrunner.commands import heartbeat as heartbeat_cmd
 from vardrrunner.commands import pipeline as pipeline_cmd
 from vardrrunner.commands import status as status_cmd
@@ -36,6 +37,14 @@ login_app.command("vardrmap")(auth.login_vardrmap)
 def status():
     """Show config, API connectivity, and local tool availability."""
     status_cmd.run_status()
+
+
+@app.command()
+def doctor(
+    as_json: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON report"),
+):
+    """Deep preflight before unattended use — exits non-zero on actionable failures."""
+    doctor_cmd.run_doctor(as_json=as_json)
 
 
 @app.command()

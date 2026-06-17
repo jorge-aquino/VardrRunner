@@ -25,8 +25,8 @@ This is not "just another CLI." It is built to a product-grade bar — see the
   - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; **add a tool here** (see ADR 0002)
   - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
-  - `commands/` — one module per command group: `auth`, `daemon`, `heartbeat`, `imports`, `jobs` (job lifecycle), `programs`, `run`, `status`
-- `tests/` — pytest suite (188 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
+  - `commands/` — one module per command group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs` (job lifecycle), `pipeline`, `programs`, `run`, `status`
+- `tests/` — pytest suite (196 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
 - `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
 - `docs/adr/` — Architecture Decision Records, one per non-trivial decision
 - `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index
@@ -71,7 +71,7 @@ Documentation-only, test-only, and pure-refactor commits may note
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests --cov=vardrrunner --cov-fail-under=60   # all 188 must pass
+pytest tests --cov=vardrrunner --cov-fail-under=60   # all 196 must pass
 ```
 Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
 
@@ -94,7 +94,8 @@ vardrrunner daemon start        # continuous worker: polls jobs + heartbeats
 - `jobs list|run` — inspect and execute the backend job queue (one-shot)
 - `daemon start|stop|status` — long-running background worker (poll + heartbeat)
 - `heartbeat` — send a single heartbeat
-- `status` — show local config, version, and detected tool availability
+- `status` — quick human glance: local config, version, detected tool availability
+- `doctor` — deep preflight for unattended use; exits non-zero on actionable failures (`--json`)
 
 ---
 
