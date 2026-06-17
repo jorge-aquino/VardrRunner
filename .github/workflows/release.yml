@@ -26,10 +26,12 @@ jobs:
           python -m build
 
       - name: Generate SBOM (CycloneDX)
+        # Non-blocking: an SBOM-tooling hiccup must never hold up a release.
+        continue-on-error: true
         run: |
           pip install cyclonedx-bom
           pip install -e .
-          cyclonedx-py environment --output-format JSON --outfile sbom.cdx.json
+          cyclonedx-py environment --output-format JSON > sbom.cdx.json
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
