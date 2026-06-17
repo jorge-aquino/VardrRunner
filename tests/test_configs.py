@@ -85,3 +85,40 @@ def test_nmap_top_ports_bounds(top_ports):
 def test_subfinder_timeout():
     assert configs.SubfinderConfig.from_dict({"timeout": 30}).timeout == 30
     assert configs.SubfinderConfig.from_dict({}).timeout is None
+
+
+# --- job envelope -------------------------------------------------------------
+
+
+def test_job_envelope_valid():
+    env = configs.JobEnvelope.from_dict(
+        {
+            "id": "job-1",
+            "tool_type": "httpx",
+            "target_source": "scope",
+            "program_id": "prog-1",
+            "config": {"limit": 5},
+        }
+    )
+    assert env.id == "job-1" and env.tool_type == "httpx" and env.config == {"limit": 5}
+
+
+def test_job_envelope_defaults_config_to_empty():
+    env = configs.JobEnvelope.from_dict(
+        {"id": "1", "tool_type": "httpx", "target_source": "scope", "program_id": "p"}
+    )
+    assert env.config == {}
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        {"tool_type": "httpx", "target_source": "scope", "program_id": "p"},  # no id
+        {"id": "1", "target_source": "scope", "program_id": "p"},  # no tool_type
+        {"id": "1", "tool_type": "httpx", "program_id": "p"},  # no target_source
+        {"id": "1", "tool_type": "httpx", "target_source": "scope"},  # no program_id
+    ],
+)
+def test_job_envelope_missing_field_rejected(job):
+    with pytest.raises(configs.ConfigError):
+        configs.JobEnvelope.from_dict(job)

@@ -20,11 +20,13 @@ This is not "just another CLI." It is built to a product-grade bar — see the
   - `cli.py` — Typer app; wires every sub-command
   - `api.py` — thin HTTP client (`requests.Session`); the only thing that talks to a backend
   - `config.py` — resolves credentials (env over `~/.vardrmap/config.json`); enforces HTTPS (holds the API key — treat as secret)
-  - `configs.py` — typed, validated tool configs (frozen dataclasses; bad payload → `ConfigError`)
+  - `configs.py` — typed, validated tool configs + `JobEnvelope` (frozen dataclasses; bad payload → `ConfigError`)
+  - `targets.py` — target resolution (scope/recon/inline/file); shared by `run` commands and handlers
   - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; **add a tool here** (see ADR 0002)
+  - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
   - `commands/` — one module per command group: `auth`, `daemon`, `heartbeat`, `imports`, `jobs` (job lifecycle), `programs`, `run`, `status`
-- `tests/` — pytest suite (170 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
+- `tests/` — pytest suite (188 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
 - `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
 - `docs/adr/` — Architecture Decision Records, one per non-trivial decision
 - `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index
@@ -69,7 +71,7 @@ Documentation-only, test-only, and pure-refactor commits may note
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests --cov=vardrrunner --cov-fail-under=60   # all 113 must pass
+pytest tests --cov=vardrrunner --cov-fail-under=60   # all 188 must pass
 ```
 Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
 

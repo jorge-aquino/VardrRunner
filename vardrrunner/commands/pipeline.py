@@ -101,11 +101,19 @@ def _run_stage(
     except runner.ToolTimeout as e:
         console.print(f"[red]{e}[/red]")
         return continue_on_error
+    except Exception as e:
+        console.print(f"[red]Execution failed:[/red] {e}")
+        return continue_on_error
 
     if output is None or not output.exists() or output.stat().st_size == 0:
         console.print("[yellow]No output produced — stopping pipeline.[/yellow]")
         return False
 
-    summary = handler.upload(client, program_id, output)
+    try:
+        summary = handler.upload(client, program_id, output)
+    except Exception as e:
+        console.print(f"[red]Upload failed:[/red] {e}")
+        return continue_on_error
+
     console.print(f"[green]Stage done.[/green] {summary}")
     return True

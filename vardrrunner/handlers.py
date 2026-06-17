@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from vardrrunner import api, configs, runner
-from vardrrunner.commands.run import _is_wildcard, _resolve_targets
+from vardrrunner.targets import _is_wildcard, _resolve_targets
 
 C = TypeVar("C")
 

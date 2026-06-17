@@ -60,9 +60,9 @@ hung tool is killed rather than blocking.
 
 ## `import` — import an existing output file
 ```bash
-vardrrunner import nuclei --program-id <id> --file <path>
-vardrrunner import httpx  --program-id <id> --file <path>
-vardrrunner import ffuf   --program-id <id> --file <path>
+vardrrunner import nuclei --program <id> --file <path>
+vardrrunner import httpx  --program <id> --file <path>
+vardrrunner import ffuf   --program <id> --file <path>
 ```
 Pushes results from a tool output file (JSON/JSONL) you already have, without running the
 tool. `-f` is shorthand for `--file`.

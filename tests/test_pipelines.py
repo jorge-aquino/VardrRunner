@@ -73,6 +73,45 @@ def test_run_pipeline_executes_stages_in_order(tmp_path):
     assert upload_tool_types == ["httpx", "httpx", "nuclei"]
 
 
+def _patches_for(client, tmp_path):
+    return (
+        patch("vardrrunner.commands.pipeline.config.require_auth", return_value=("https://a", "k")),
+        patch("vardrrunner.commands.pipeline.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.pipeline._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.runner.run_subfinder", side_effect=_fake_tool),
+        patch("vardrrunner.runner.run_httpx", side_effect=_fake_tool),
+    )
+
+
+def test_pipeline_upload_failure_honors_continue_on_error(tmp_path):
+    client = MagicMock()
+    client.scope.return_value = {"in": [{"value": "*.example.com"}], "out": []}
+    client.recon.return_value = [{"url": "https://app.example.com"}]
+    client.import_file.side_effect = RuntimeError("upload boom")  # every upload fails
+
+    p = _patches_for(client, tmp_path)
+    with p[0], p[1], p[2], p[3], p[4], p[5]:
+        # quick = subfinder → httpx; --continue-on-error keeps going past the failed upload.
+        pipeline_cmd.run_pipeline("quick", "prog-1", yes=True, continue_on_error=True)
+
+    assert client.import_file.call_count == 2  # both stages attempted their upload
+
+
+def test_pipeline_upload_failure_stops_without_continue(tmp_path):
+    client = MagicMock()
+    client.scope.return_value = {"in": [{"value": "*.example.com"}], "out": []}
+    client.recon.return_value = [{"url": "https://app.example.com"}]
+    client.import_file.side_effect = RuntimeError("upload boom")
+
+    p = _patches_for(client, tmp_path)
+    with p[0], p[1], p[2], p[3], p[4], p[5]:
+        # Default: stop after the first failing stage.
+        pipeline_cmd.run_pipeline("quick", "prog-1", yes=True)
+
+    assert client.import_file.call_count == 1
+
+
 def test_run_pipeline_stops_when_stage_has_no_targets(tmp_path):
     client = MagicMock()
     # No wildcard scope → subfinder resolves zero domains → pipeline stops at stage 1.

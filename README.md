@@ -60,8 +60,8 @@ vardrrunner daemon start       # run the continuous worker (poll jobs + heartbea
 ```bash
 vardrrunner jobs list                          # show the backend queue
 vardrrunner jobs run                            # claim + execute all pending jobs once
-vardrrunner run subfinder --program-id 12 ...   # run a single tool and upload results
-vardrrunner import nuclei --program-id 12 -f out.jsonl
+vardrrunner run subfinder --program 12 ...       # run a single tool and upload results
+vardrrunner import nuclei --program 12 -f out.jsonl
 ```
 
 See **[docs/cli.md](docs/cli.md)** for the full command reference.
@@ -97,7 +97,7 @@ pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests              # 113 tests; all subprocess + HTTP calls are mocked
+pytest tests              # 188 tests; all subprocess + HTTP calls are mocked
 ```
 CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,

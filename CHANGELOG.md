@@ -13,19 +13,12 @@ Per-version detail notes live in [`changelog/`](changelog/).
   availability, validates the nuclei `--severity` filter up front, stops early on an empty
   stage, and supports `--continue-on-error`. `vardrrunner pipeline list` shows the chains.
   Built on the handler registry — a pipeline is just an ordered list of `Stage(tool, source)`.
-### Changed
-- **Tool-handler registry.** `execute_pending_jobs` (~290 lines of per-tool `if` branches)
-  is refactored into a `ToolHandler` per job type (`handlers.py`) driven by one uniform
-  lifecycle (`_execute_one`): capability check → config → targets → claim → events → upload
-  → done/fail. Every tool now gets identical claim/event/failure handling, and adding a tool
-  is a one-file change. No behavior change. See
-  [docs/adr/0002-tool-handler-registry.md](docs/adr/0002-tool-handler-registry.md).
-### Added
 - **Typed, validated job configs.** Tool configs (`limit`, `status_code`, `severity`,
   `templates`, `top_ports`, `timing`, `timeout`) are parsed into frozen dataclasses
   (`configs.py`) and validated up front. A malformed or drifted backend payload now fails
   the job fast with a clear message (e.g. out-of-range nmap timing, unknown nuclei severity)
-  instead of blowing up mid-execution.
+  instead of blowing up mid-execution. A `JobEnvelope` likewise validates the job wrapper
+  (`id`/`tool_type`/`target_source`/`program_id`).
 - **`vardrrunner run nmap`.** Direct service-discovery command (safe profile only), matching
   the existing nmap *job* support. `status` now lists every allowlisted tool (incl. nmap),
   so it can't drift from what the runner actually supports.
@@ -36,19 +29,36 @@ Per-version detail notes live in [`changelog/`](changelog/).
   (default 1800 s; override per job via `config.timeout`, or globally via
   `VARDRRUNNER_TOOL_TIMEOUT`). A hung tool is killed and the job marked **failed** instead
   of freezing the daemon forever.
-### Security
-- **HTTPS enforced for the backend URL.** The runner refuses to send your `vmap_` API key
-  over plain HTTP to a non-local host (allowed for `localhost`, or with
-  `VARDRRUNNER_ALLOW_INSECURE=1`). Validated at login and on every authenticated call.
+
 ### Changed
+- **Tool-handler registry.** `execute_pending_jobs` (~290 lines of per-tool `if` branches)
+  is refactored into a `ToolHandler` per job type (`handlers.py`) driven by one uniform
+  lifecycle (`_execute_one`): capability check → config → targets → claim → events → upload
+  → done/fail. Every tool now gets identical claim/event/failure handling, and adding a tool
+  is a one-file change. See
+  [docs/adr/0002-tool-handler-registry.md](docs/adr/0002-tool-handler-registry.md).
+- **Direct `run` commands share the typed-config/handler path.** `run httpx|subfinder|nuclei|nmap`
+  now validate their options through the same configs and reuse the same handlers as jobs and
+  pipelines, so `run nmap --timing 9` is rejected (not silently clamped) and `run nuclei
+  --severity bogus` fails before any work. Target resolution moved to `targets.py`.
 - **Resilient API client.** The HTTP session now retries transient failures
   (connection errors and 429/500/502/503/504) with exponential backoff, so a
   long-running daemon survives network blips and brief backend restarts. Retries
   are limited to idempotent methods — POST/PATCH are never auto-retried, so a
   dropped response can't cause a double-claim, double-import, or duplicate event.
-  Retry count and backoff are constructor-configurable.
-- Requests now send a `User-Agent: vardrrunner/<version> (<os>)` header so the
-  backend can attribute traffic to a runner and version.
+  Retry count and backoff are constructor-configurable. Requests also send a
+  `User-Agent: vardrrunner/<version> (<os>)` header for backend attribution.
+
+### Fixed
+- **Pipeline `--continue-on-error` is now complete** — it also covers tool-execution and
+  upload failures, not just target resolution and timeouts.
+- **Malformed job envelopes fail cleanly.** A job missing a required field is marked failed
+  (or skipped if it has no id) via `JobEnvelope`, instead of risking a `KeyError` mid-loop.
+
+### Security
+- **HTTPS enforced for the backend URL.** The runner refuses to send your `vmap_` API key
+  over plain HTTP to a non-local host (allowed for `localhost`, or with
+  `VARDRRUNNER_ALLOW_INSECURE=1`). Validated at login and on every authenticated call.
 
 ## [0.18.0] — 2026-06-14
 First release from the standalone repository. See
