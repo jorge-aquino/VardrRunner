@@ -304,6 +304,56 @@ def run_nmap(
     )
 
 
+@run_app.command("dnsx")
+def run_dnsx(
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    scope: bool = typer.Option(False, "--scope", help="Use in-scope assets from VardrMap"),
+    from_recon: bool = typer.Option(
+        False, "--from-recon", help="Use live recon items from VardrMap"
+    ),
+    target: str | None = typer.Option(None, "--target", help="Single inline target"),
+    targets_file: Path | None = typer.Option(None, "--targets", help="Path to a targets .txt file"),
+    limit: int = typer.Option(500, "--limit", help="Max recon items to use (--from-recon only)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
+    """Resolve hosts with dnsx and upload the resolvable ones as recon targets."""
+    run.run_dnsx(
+        program_id=program_id,
+        scope=scope,
+        from_recon=from_recon,
+        target=target,
+        targets_file=targets_file,
+        limit=limit,
+        yes=yes,
+    )
+
+
+@run_app.command("naabu")
+def run_naabu(
+    program_id: str = typer.Option(..., "--program", "-p", help="Program UUID"),
+    scope: bool = typer.Option(False, "--scope", help="Use in-scope assets from VardrMap"),
+    from_recon: bool = typer.Option(
+        False, "--from-recon", help="Use live recon items from VardrMap"
+    ),
+    target: str | None = typer.Option(None, "--target", help="Single inline target"),
+    targets_file: Path | None = typer.Option(None, "--targets", help="Path to a targets .txt file"),
+    limit: int = typer.Option(500, "--limit", help="Max recon items to use (--from-recon only)"),
+    top_ports: int = typer.Option(100, "--top-ports", help="Number of most-common ports to scan"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
+    """Port-scan hosts with naabu locally and upload open ports to VardrMap."""
+    run.run_naabu(
+        program_id=program_id,
+        scope=scope,
+        from_recon=from_recon,
+        target=target,
+        targets_file=targets_file,
+        limit=limit,
+        top_ports=top_ports,
+        yes=yes,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Pipeline
 # --------------------------------------------------------------------------- #

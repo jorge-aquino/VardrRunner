@@ -31,4 +31,18 @@ PIPELINES: dict[str, list[Stage]] = {
         Stage("subfinder", "scope"),
         Stage("httpx", "recon"),
     ],
+    # Deep recon: resolve discovered subdomains with dnsx before probing, so httpx
+    # and nuclei only see hosts that actually exist.
+    "deep": [
+        Stage("subfinder", "scope"),
+        Stage("dnsx", "recon"),
+        Stage("httpx", "recon"),
+        Stage("nuclei", "recon"),
+    ],
+    # Port discovery: enumerate → resolve → fast port-scan with naabu (→ services).
+    "ports": [
+        Stage("subfinder", "scope"),
+        Stage("dnsx", "recon"),
+        Stage("naabu", "recon"),
+    ],
 }

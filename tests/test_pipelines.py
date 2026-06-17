@@ -17,12 +17,20 @@ def _fake_tool(*args, **kwargs):
 
 
 def test_pipeline_definitions():
-    assert set(pipelines.PIPELINES) >= {"recon", "quick"}
+    assert set(pipelines.PIPELINES) >= {"recon", "quick", "deep", "ports"}
     recon = [s.tool for s in pipelines.PIPELINES["recon"]]
     assert recon == ["subfinder", "httpx", "nuclei"]
     # First stage reads scope; later stages chain via recon.
     assert pipelines.PIPELINES["recon"][0].source == "scope"
     assert pipelines.PIPELINES["recon"][1].source == "recon"
+    # deep inserts dnsx resolution before probing; ports scans with naabu.
+    assert [s.tool for s in pipelines.PIPELINES["deep"]] == [
+        "subfinder",
+        "dnsx",
+        "httpx",
+        "nuclei",
+    ]
+    assert [s.tool for s in pipelines.PIPELINES["ports"]] == ["subfinder", "dnsx", "naabu"]
 
 
 def test_list_pipelines_runs(capsys):

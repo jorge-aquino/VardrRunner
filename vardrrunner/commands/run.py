@@ -192,3 +192,54 @@ def run_nmap(
     # Validates timing (0-4) and top_ports up front — `--timing 9` is rejected, not clamped.
     cfg = _build_config("nmap", {"top_ports": top_ports, "timing": timing, "limit": limit})
     _finish("nmap", client, program_id, targets, cfg, _make_run_dir())
+
+
+def run_dnsx(
+    program_id: str,
+    scope: bool = False,
+    from_recon: bool = False,
+    target: str | None = None,
+    targets_file: Path | None = None,
+    limit: int = 500,
+    yes: bool = False,
+):
+    """Resolve hosts with dnsx and upload the resolvable ones as recon targets."""
+    runner.check_tool("dnsx")
+    url, key = config.require_auth()
+    client = api.VardrMapClient(url, key)
+
+    raw = _resolve_targets(client, program_id, scope, from_recon, target, targets_file, None, limit)
+    targets = list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
+    if not targets:
+        console.print("[yellow]No targets found.[/yellow]")
+        raise typer.Exit(0)
+
+    _confirm(targets, "dnsx", yes)
+    cfg = _build_config("dnsx", {"limit": limit})
+    _finish("dnsx", client, program_id, targets, cfg, _make_run_dir())
+
+
+def run_naabu(
+    program_id: str,
+    scope: bool = False,
+    from_recon: bool = False,
+    target: str | None = None,
+    targets_file: Path | None = None,
+    limit: int = 500,
+    top_ports: int = 100,
+    yes: bool = False,
+):
+    """Port-scan hosts with naabu and upload open ports to VardrMap's services API."""
+    runner.check_tool("naabu")
+    url, key = config.require_auth()
+    client = api.VardrMapClient(url, key)
+
+    raw = _resolve_targets(client, program_id, scope, from_recon, target, targets_file, None, limit)
+    targets = list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
+    if not targets:
+        console.print("[yellow]No targets found.[/yellow]")
+        raise typer.Exit(0)
+
+    _confirm(targets, "naabu", yes)
+    cfg = _build_config("naabu", {"top_ports": top_ports, "limit": limit})
+    _finish("naabu", client, program_id, targets, cfg, _make_run_dir())

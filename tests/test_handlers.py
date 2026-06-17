@@ -8,7 +8,7 @@ from vardrrunner import configs, handlers
 
 
 def test_registry_covers_all_tools():
-    assert set(handlers.REGISTRY) == {"httpx", "nuclei", "nmap", "subfinder"}
+    assert set(handlers.REGISTRY) == {"httpx", "nuclei", "nmap", "subfinder", "dnsx", "naabu"}
     for name, handler in handlers.REGISTRY.items():
         assert handler.tool == name
 
@@ -109,3 +109,41 @@ def test_httpx_upload_summary(tmp_path):
     summary = handlers.HttpxHandler().upload(client, "p", tmp_path / "httpx.jsonl")
     client.import_file.assert_called_once()
     assert "3" in summary
+
+
+def test_dnsx_execute_builds_recon_jsonl(tmp_path):
+    def fake_run(hosts, out, timeout=None):
+        out.write_text("a.example.com\nb.example.com\n")
+        return 0
+
+    with patch("vardrrunner.runner.run_dnsx", side_effect=fake_run):
+        out = handlers.DnsxHandler().execute(["a.example.com"], tmp_path, configs.DnsxConfig())
+    assert out is not None and out.name == "dnsx_httpx.jsonl"
+    lines = out.read_text().splitlines()
+    assert len(lines) == 2 and '"source": "dnsx"' in lines[0]
+
+
+def test_dnsx_execute_no_results_returns_none(tmp_path):
+    with patch(
+        "vardrrunner.runner.run_dnsx", side_effect=lambda h, o, timeout=None: o.write_text("")
+    ):
+        out = handlers.DnsxHandler().execute(["a.example.com"], tmp_path, configs.DnsxConfig())
+    assert out is None
+
+
+def test_naabu_upload_posts_services(tmp_path):
+    client = MagicMock()
+    client.create_services.return_value = {"created": 2, "updated": 0}
+    svcs = [{"host": "h", "port": 80, "protocol": "tcp"}]
+    with patch("vardrrunner.runner.parse_naabu_json", return_value=svcs):
+        summary = handlers.NaabuHandler().upload(client, "p", tmp_path / "naabu.json")
+    client.create_services.assert_called_once_with("p", svcs)
+    assert "2 new" in summary
+
+
+def test_naabu_upload_no_ports_skips_create(tmp_path):
+    client = MagicMock()
+    with patch("vardrrunner.runner.parse_naabu_json", return_value=[]):
+        summary = handlers.NaabuHandler().upload(client, "p", tmp_path / "naabu.json")
+    assert "no open ports" in summary
+    client.create_services.assert_not_called()

@@ -3,6 +3,7 @@ Safe subprocess runner. Only tools in ALLOWED_TOOLS can be executed.
 Commands are built as argument lists — shell=True is never used.
 """
 
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,8 @@ ALLOWED_TOOLS = {
     "nuclei": "nuclei",
     "subfinder": "subfinder",
     "nmap": "nmap",
+    "dnsx": "dnsx",
+    "naabu": "naabu",
 }
 
 # Wall-clock ceiling for a single tool run. A hung tool must never freeze the
@@ -260,3 +263,77 @@ def run_subfinder(domains: list[str], output_path: Path, timeout: int | None = N
         "-silent",
     ]
     return _run_tool(cmd, domains_file, "subfinder", timeout)
+
+
+def run_dnsx(hosts: list[str], output_path: Path, timeout: int | None = None) -> int:
+    """Resolve a list of hosts with dnsx. Output is the resolvable hosts, one per line."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+        tmp.write("\n".join(hosts))
+        hosts_file = tmp.name
+
+    cmd = [
+        ALLOWED_TOOLS["dnsx"],
+        "-l",
+        hosts_file,
+        "-o",
+        str(output_path),
+        "-silent",
+    ]
+    return _run_tool(cmd, hosts_file, "dnsx", timeout)
+
+
+def run_naabu(
+    hosts: list[str], output_path: Path, top_ports: int = 100, timeout: int | None = None
+) -> int:
+    """Port-scan a list of hosts with naabu (top-N ports). Output is JSON lines."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+        tmp.write("\n".join(hosts))
+        hosts_file = tmp.name
+
+    cmd = [
+        ALLOWED_TOOLS["naabu"],
+        "-list",
+        hosts_file,
+        "-top-ports",
+        str(top_ports),
+        "-json",
+        "-o",
+        str(output_path),
+        "-silent",
+    ]
+    return _run_tool(cmd, hosts_file, "naabu", timeout)
+
+
+def parse_naabu_json(json_path: Path) -> list[dict]:
+    """Parse naabu JSON-lines output into service dicts for the services API."""
+    services: list[dict] = []
+    try:
+        text = json_path.read_text()
+    except OSError:
+        return services
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        host = obj.get("host") or obj.get("ip")
+        port = obj.get("port")
+        if not host or not port:
+            continue
+        services.append(
+            {
+                "host": host,
+                "port": int(port),
+                "protocol": obj.get("protocol", "tcp"),
+                "service_name": "",
+                "product": "",
+                "version": "",
+                "state": "open",
+                "source": "naabu",
+            }
+        )
+    return services

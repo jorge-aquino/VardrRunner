@@ -18,10 +18,10 @@ results, and heartbeats so the backend always knows which machines are online.
 - **Job queue worker** — poll, atomically claim, execute, and report scan jobs
 - **Daemon mode** — `daemon start` runs a continuous background worker (poll every 5 s,
   heartbeat every 60 s) with detached mode, PID file, and graceful shutdown
-- **Tool runners** — `httpx`, `subfinder`, `nuclei`, `nmap` (more coming), each capturing
-  output into a timestamped run directory, every run bounded by a timeout
-- **Recon pipelines** — `pipeline run recon` chains subfinder → httpx → nuclei in one
-  command, each stage handing off to the next
+- **Tool runners** — `httpx`, `subfinder`, `nuclei`, `nmap`, `dnsx`, `naabu` (more coming),
+  each capturing output into a timestamped run directory, every run bounded by a timeout
+- **Recon pipelines** — chain tools in one command: `recon` (subfinder → httpx → nuclei),
+  `deep` (adds dnsx resolution), `ports` (subfinder → dnsx → naabu), `quick`
 - **Importers** — pull existing `nuclei` / `httpx` / `ffuf` output files into the backend
 - **Real heartbeat** — reports hostname, version, OS, and per-tool availability so the
   backend's Bridge shows live machine status
@@ -35,7 +35,7 @@ results, and heartbeats so the backend always knows which machines are online.
 
 ## Requirements
 - Python **3.10+**
-- The external tools you intend to run, on your `PATH` (e.g. `httpx`, `subfinder`, `nuclei`, `nmap`)
+- The external tools you intend to run, on your `PATH` (e.g. `httpx`, `subfinder`, `nuclei`, `nmap`, `dnsx`, `naabu`)
 - A VardrSec backend URL and an API key (`vmap_…` for VardrMap)
 
 ## Install
