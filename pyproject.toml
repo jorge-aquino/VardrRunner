@@ -9,11 +9,31 @@ description = "Local automation runner for the VardrSec product family"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [{ name = "Jorge Aquino" }]
+keywords = ["security", "bug-bounty", "recon", "automation", "cli", "vardrsec"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13",
     "requests>=2.31",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jorge-aquino/VardrRunner"
+Repository = "https://github.com/jorge-aquino/VardrRunner"
+Changelog = "https://github.com/jorge-aquino/VardrRunner/blob/main/CHANGELOG.md"
+Issues = "https://github.com/jorge-aquino/VardrRunner/issues"
 
 [project.optional-dependencies]
 dev = [

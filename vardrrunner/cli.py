@@ -1,8 +1,8 @@
 """
 vardrrunner — local automation runner for the VardrSec product family.
 
-Part of the VardrMap project. Lives in runner/ and can be extracted to
-VardrSec/VardrRunner when it matures.
+Runs security tooling on the operator's machine and syncs results to a VardrSec
+backend (today: VardrMap) over HTTP. See https://github.com/jorge-aquino/VardrRunner.
 """
 
 from pathlib import Path
