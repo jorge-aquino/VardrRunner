@@ -37,7 +37,8 @@ either direction.
 | `vardrrunner/commands/pipeline.py` | `pipeline list|run` — runs a `pipelines` chain stage by stage (resolve → execute → upload), each stage handing off to the next via the recon store. |
 | `vardrrunner/commands/daemon.py` | `daemon start|stop|status` — continuous worker (poll + heartbeat) with PID file and graceful shutdown. |
 | `vardrrunner/commands/heartbeat.py` | `heartbeat` — send a single heartbeat. |
-| `vardrrunner/commands/status.py` | `status` — local config, version, detected tool availability. |
+| `vardrrunner/commands/status.py` | `status` — local config, version, detected tool availability (quick glance). |
+| `vardrrunner/commands/doctor.py` | `doctor` — deep preflight; runs health checks and exits non-zero on actionable failures (`--json` report). Reuses `daemon` PID helpers and `config` validation. |
 | `vardrrunner/commands/programs.py` | program lookup helpers used by other commands. |
 
 ## Job execution lifecycle

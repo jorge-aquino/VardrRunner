@@ -23,11 +23,30 @@ treated as a secret.
 
 ## `status`
 Show local configuration, runner version, and which external tools are detected on `PATH`
-(with versions where available). Does not require auth for the local parts.
+(with versions where available). Does not require auth for the local parts. This is the
+quick human glance — *"show me where I stand."*
 
 ```bash
 vardrrunner status
 ```
+
+---
+
+## `doctor`
+Deep preflight before unattended use — *"validate this machine."* Unlike `status`, `doctor`
+is built for scripts: it **exits 0 only when the runner is healthy enough to work**, exits
+non-zero on any actionable failure, and prints a remediation hint per problem.
+
+```bash
+vardrrunner doctor && vardrrunner daemon start --detach   # gate provisioning on health
+vardrrunner doctor --json                                  # machine-readable report
+```
+
+Checks: credential source (env vs file), backend URL validity (HTTPS), config-file
+permissions, API auth, daemon PID health (running / stale), run-dir writability, free disk,
+tool versions, and per-pipeline readiness. **Failures** (no creds, bad URL, auth failure,
+unwritable run dir, critically low disk, zero tools) set a non-zero exit; missing individual
+tools and low-ish disk are **warnings** that don't block.
 
 ---
 

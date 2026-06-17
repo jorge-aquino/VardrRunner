@@ -7,6 +7,12 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 ### Added
+- **`vardrrunner doctor`.** A deep preflight for unattended/VPS use, distinct from `status`'s
+  quick glance: it exits 0 only when the runner is healthy enough to work, exits non-zero on
+  actionable failures, and prints remediation per problem (so `doctor && daemon start` gates
+  provisioning). Checks credential source, backend URL validity, config-file permissions, API
+  auth, daemon PID health, run-dir writability, free disk, tool versions, and pipeline
+  readiness. `--json` emits a machine-readable report.
 - **Recon pipelines.** `vardrrunner pipeline run recon --program <id>` chains tools in one
   command — `recon` = subfinder → httpx → nuclei, `quick` = subfinder → httpx. Each stage
   uploads its results so the next pulls them from the recon store; the run preflights tool
