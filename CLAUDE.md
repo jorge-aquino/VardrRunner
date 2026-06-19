@@ -1,146 +1,78 @@
 # VardrRunner — Claude Instructions
 
-## What this project is
-VardrRunner is the local automation runner for the VardrSec product family. It is a
-Python CLI (Typer + Rich) that runs security tooling on the operator's own machine and
-syncs results to a VardrSec backend (today: VardrMap) **purely over HTTP**.
-
-It is a **client**, not a service: the runner polls the backend for work
-(`GET /jobs/pending`), claims jobs atomically (`POST /jobs/{id}/claim`), executes the
-tool locally, streams lifecycle events back (`POST /jobs/{id}/events`), uploads results,
-and heartbeats so the backend knows it is alive. There is zero code coupling to the
-backend — they only ever talk JSON over the wire. Extracted from the VardrMap monorepo
-on 2026-06-14 with full history (see `docs/adr/0001-extract-vardrrunner-from-vardrmap.md`).
-
-This is not "just another CLI." It is built to a product-grade bar — see the
-**Engineering Charter** below, which is shared verbatim across every VardrSec repo.
+Local automation runner for VardrSec. Python CLI (Typer + Rich) that runs security tooling locally and syncs results to VardrMap **over HTTP only**. Polls `GET /jobs/pending`, claims atomically (`POST /jobs/{id}/claim`), executes locally, streams lifecycle events back, uploads results, heartbeats. Zero code coupling to the backend — JSON over wire only. Extracted from VardrMap monorepo 2026-06-14 (see `docs/adr/0001-extract-vardrrunner-from-vardrmap.md`).
 
 ## Where things live
-- `vardrrunner/` — the Python package (source of truth)
+- `vardrrunner/` — Python package
   - `cli.py` — Typer app; wires every sub-command
-  - `api.py` — thin HTTP client (`requests.Session`); the only thing that talks to a backend
+  - `api.py` — thin HTTP client (`requests.Session`); **only** thing that talks to backend
   - `config.py` — resolves credentials (env > keychain > `~/.vardrmap/config.json`); enforces HTTPS
-  - `keychain.py` — OS keychain wrapper (`keyring`); stores the API key, degrades gracefully with no backend
-  - `configs.py` — typed, validated tool configs + `JobEnvelope` (frozen dataclasses; bad payload → `ConfigError`)
-  - `targets.py` — target resolution (scope/recon/inline/file); shared by `run` commands and handlers
-  - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; **add a tool here** (see ADR 0002)
+  - `keychain.py` — OS keychain wrapper (`keyring`); degrades gracefully
+  - `configs.py` — typed, validated tool configs + `JobEnvelope`; bad payload → `ConfigError`
+  - `targets.py` — target resolution (scope/recon/inline/file)
+  - `handlers.py` — one `ToolHandler` per job type + `REGISTRY`; add new tools here (see ADR 0002)
   - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
-  - `commands/` — one module per command group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs` (job lifecycle), `pipeline`, `programs`, `run`, `status`
-- `tests/` — pytest suite (222 tests). **Every subprocess and HTTP call is mocked** — tests never touch the network or spawn real tools.
-- `docs/` — architecture, development setup, CLI reference, and ADRs (see Documentation rules)
-- `docs/adr/` — Architecture Decision Records, one per non-trivial decision
-- `changelog/` — per-version detail notes; `CHANGELOG.md` at root is the rolled-up index
-- `.github/workflows/` — CI (lint + full test suite on every push)
-- `scratch/` — gitignored; throwaway experiments only, never committed
+  - `commands/` — one module per group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs`, `pipeline`, `programs`, `run`, `status`
+- `tests/` — pytest suite (222 tests); all subprocess and HTTP calls mocked — no network or real tool calls
+- `docs/` — architecture, development setup, CLI reference, ADRs
+- `changelog/` — per-version notes; `CHANGELOG.md` at root is the index
+- `.github/workflows/` — CI (lint + tests on every push)
+- `scratch/` — gitignored; throwaway experiments only
 
-## Hard rules — never break these
-- Never add "Co-Authored-By: Claude" to commits
-- Run the full test suite (and the linter) before every commit — keep the suite green
+## Hard rules
+- No "Co-Authored-By: Claude" in commits
+- Run full test suite + linter before every commit
 - Every behavior-changing change updates docs **and** `CHANGELOG.md` in the same commit
-- The runner talks to backends **only** through `api.py` — no scattered HTTP calls
-- Never log, print, or commit the API key; it lives in the OS keychain (or env / fallback config file)
-- Tools the runner shells out to are external input — validate/normalize args, never build shell strings from unsanitized server data
+- All backend communication through `api.py` — no scattered HTTP calls
+- Never log, print, or commit the API key; it lives in the OS keychain
+- Never build shell strings from unsanitized server data — always pass argv lists
 
-## Security expectations
-- The API key lives in the **OS keychain** by default (env `VARDRMAP_API_KEY` and a legacy
-  plaintext config-file fallback also supported); resolution is env > keychain > file. Never
-  echo it. The config file normally holds only the backend URL.
-- The backend URL must be HTTPS (except `localhost`) so the key is never sent in cleartext;
-  `config.validate_api_url` enforces this at login and on every authenticated call
-- Treat all data from the backend as untrusted: validate job payloads, normalize targets
-  (e.g. `strip_url_to_host` for nmap) before passing them to a subprocess
-- Never use `shell=True` with interpolated server data; pass argv lists
-- Every tool run is bounded by a timeout; a missing, failed, or **timed-out** tool marks the
-  job **failed** with a clear reason — never silently skip and never hang the daemon
+## Security
+- API key: OS keychain by default (env `VARDRMAP_API_KEY` > keychain > plaintext config fallback). Never echo it.
+- Backend URL must be HTTPS (except localhost); `config.validate_api_url` enforces this on login and every authenticated call
+- Treat all backend data as untrusted: validate job payloads, normalize targets before passing to subprocess
+- Never use `shell=True` with interpolated server data
+- Every tool run bounded by a timeout; missing/failed/timed-out tool → job marked **failed** with reason — never silent skip, never hang
 
 ## Documentation rules
-A change is **behavior-changing** if it adds, removes, or modifies a command, flag,
-config key, backend endpoint the runner calls, or operator-visible behavior.
+Behavior-changing = adds, removes, or modifies a command, flag, config key, backend endpoint called, or operator-visible behavior.
 
-- New or changed command/flag → `docs/cli.md`
+- New/changed command/flag → `docs/cli.md`
 - New module, data flow, or backend interaction → `docs/architecture.md`
 - New setup step, env var, or dependency → `docs/development.md`
-- Any non-trivial design decision → a new ADR in `docs/adr/`
-- Any feature, fix, or behavior change → `CHANGELOG.md` (+ a `changelog/vX.Y.Z.md` note)
+- Non-trivial design decision → ADR in `docs/adr/`
+- Any feature/fix/behavior change → `CHANGELOG.md` + `changelog/vX.Y.Z.md`
 
-Documentation-only, test-only, and pure-refactor commits may note
-"No user-facing docs change needed" in the commit summary.
+Docs-only, test-only, pure-refactor commits may note "No user-facing docs change needed."
 
-## Verification before commit
+## Verification
 ```
-# from repo root, in the activated venv — mirrors CI
-ruff check vardrrunner tests           # lint
-ruff format --check vardrrunner tests  # formatting
-mypy vardrrunner                       # type check
-pytest tests --cov=vardrrunner --cov-fail-under=60   # all 222 must pass
+ruff check vardrrunner tests
+ruff format --check vardrrunner tests
+mypy vardrrunner
+pytest tests --cov=vardrrunner --cov-fail-under=60
 ```
-Autofix lint + format with `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`.
+Autofix: `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`
 
 ## Running locally
 ```
 python -m venv venv
-.\venv\Scripts\Activate.ps1     # Windows
-pip install -e ".[dev]"         # installs the `vardrrunner` command + dev tools
-
-vardrrunner login vardrmap      # key → OS keychain; backend URL → ~/.vardrmap/config.json
-vardrrunner heartbeat           # confirm connectivity
-vardrrunner daemon start        # continuous worker: polls jobs + heartbeats
+.\venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+vardrrunner login vardrmap
+vardrrunner heartbeat
+vardrrunner daemon start
 ```
 
-## Command surface (see docs/cli.md for detail)
-- `login vardrmap` — authenticate; store the key in the OS keychain
-- `logout` — remove stored credentials (keychain + config file), keep the URL
-- `run httpx|subfinder|nuclei|nmap` — run a tool locally, upload results
-- `pipeline list|run <name>` — chain tools into one recon workflow (subfinder → httpx → nuclei)
-- `import nuclei|httpx|ffuf` — import an existing output file
-- `jobs list|run` — inspect and execute the backend job queue (one-shot)
+## Commands
+- `login vardrmap` — authenticate; store key in OS keychain
+- `logout` — remove credentials, keep URL
+- `run httpx|subfinder|nuclei|nmap` — run tool locally, upload results
+- `pipeline list|run <name>` — chain tools (subfinder → httpx → nuclei)
+- `import nuclei|httpx|ffuf` — import existing output file
+- `jobs list|run` — inspect and execute backend job queue (one-shot)
 - `daemon start|stop|status` — long-running background worker (poll + heartbeat)
-- `heartbeat` — send a single heartbeat
-- `status` — quick human glance: local config, version, detected tool availability
-- `doctor` — deep preflight for unattended use; exits non-zero on actionable failures (`--json`)
-
----
-
-## Engineering Charter — shared across all VardrSec repos
-<!-- This section is identical in VardrMap, VardrRunner, and VardrVault.
-     Edit it in one repo, then mirror the change to the other two. -->
-
-Every VardrSec repo is built to a product-grade bar: **revolutionary in intent, clean in
-execution, lean in performance, and fully documented at every step.** Treat nothing here
-as "just a script."
-
-### 1. Organization — a place for everything
-- One concern per module, one responsibility per function. No god files.
-- Fixed homes: source, tests, docs, changelog, and ADRs each live in a predictable place.
-- No stray files at the repo root. Experiments go in `scratch/` (gitignored) or are deleted.
-- Dead code, commented-out blocks, and unused dependencies are removed, not parked.
-- Every public symbol explains *why* it exists, not just *what* it does.
-
-### 2. Track everything
-- `CHANGELOG.md` follows Keep a Changelog + SemVer; updated with every behavior change.
-- Every non-trivial design decision gets an ADR in `docs/adr/` (use the template).
-- No undocumented releases; every version is dated and described.
-- Committed TODOs reference a tracked issue, or they don't get committed.
-
-### 3. Tests are non-negotiable — on every repo
-- Every behavior-changing change ships with tests in the **same commit**.
-- The suite is always green. Never commit failing or skipped tests without a written reason.
-- Cover logic, edge cases, and failure paths — coverage of meaning, not line-count vanity.
-- CI runs the full suite on every push; a red build blocks merge.
-
-### 4. Clean code
-- Clear names over clever ones. Small functions. Early returns over deep nesting.
-- No premature abstraction and no copy-paste — refactor at the third duplication.
-- Errors are handled explicitly and surfaced with context, never silently swallowed.
-- Match surrounding style; run the formatter and linter before every commit.
-
-### 5. Lean & smooth performance
-- Measure before optimizing. Keep hot paths allocation-light and I/O batched.
-- Prefer streaming/pagination over loading everything into memory.
-- Dependencies are a liability — each new one must earn its place.
-- Build, startup, and test times are part of the product; watch for regressions.
-
-### 6. Full software lifecycle, every time
-Plan → design (ADR if non-trivial) → implement **with** tests → document → review →
-release (changelog + tag) → maintain. No step is skipped, even for small changes.
+- `heartbeat` — send single heartbeat
+- `status` — local config, version, tool availability
+- `doctor` — deep preflight for unattended use; exits non-zero on failures (`--json`)
