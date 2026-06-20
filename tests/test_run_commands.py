@@ -67,3 +67,51 @@ def test_prune_run_dirs_removes_old_dirs(tmp_path):
 def test_prune_run_dirs_is_a_no_op_when_runs_dir_absent(tmp_path):
     with patch("vardrrunner.commands.run.config.runs_dir", return_value=tmp_path / "no_runs"):
         run_cmd._prune_run_dirs()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# _check_target_cap
+# ---------------------------------------------------------------------------
+
+
+def test_check_target_cap_aborts_when_exceeded():
+    """_check_target_cap must exit even with --yes so automation can't bypass the guard."""
+    with pytest.raises(typer.Exit):
+        run_cmd._check_target_cap(["t"] * 600, max_targets=500)
+
+
+def test_check_target_cap_passes_when_under_limit():
+    run_cmd._check_target_cap(["t"] * 499, max_targets=500)  # must not raise
+
+
+def test_check_target_cap_passes_at_exact_limit():
+    run_cmd._check_target_cap(["t"] * 500, max_targets=500)  # must not raise
+
+
+def test_check_target_cap_disabled_by_zero():
+    run_cmd._check_target_cap(["t"] * 10_000, max_targets=0)  # must not raise
+
+
+def test_run_httpx_respects_max_targets():
+    p = _common_patches(["t"] * 600)
+    with p[0], p[1], p[2], p[3], patch("vardrrunner.runner.run_httpx") as mock_httpx:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_httpx("prog-1", target="x", yes=True, max_targets=500)
+    mock_httpx.assert_not_called()
+
+
+def test_run_httpx_disabled_cap_runs_all_targets():
+    p = _common_patches(["t"] * 600)
+    client_mock = MagicMock()
+    client_mock.import_file.return_value = {"import_record": {"imported_count": 600}}
+    run_dir = __import__("pathlib").Path("/tmp")
+    with (
+        p[0],
+        p[1],
+        patch("vardrrunner.commands.run.api.VardrMapClient", return_value=client_mock),
+        p[3],
+        patch("vardrrunner.runner.run_httpx"),
+        patch("vardrrunner.commands.run._make_run_dir", return_value=run_dir),
+        patch("vardrrunner.commands.run._finish"),
+    ):
+        run_cmd.run_httpx("prog-1", target="x", yes=True, max_targets=0)

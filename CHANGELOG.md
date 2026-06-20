@@ -7,6 +7,15 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-06-20
+
+### Added
+- **`--max-targets` guardrail on `pipeline run` and all `run <tool>` commands.**
+  If the resolved target count exceeds the limit the command aborts before running
+  any tool, printing the count and telling the operator how to raise or disable the
+  cap. Default is 500; pass `--max-targets 0` to disable. The check applies even
+  with `--yes` so automation pipelines can't accidentally scan thousands of hosts.
+
 ## [0.22.0] — 2026-06-20
 
 ### Added

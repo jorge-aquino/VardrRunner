@@ -20,7 +20,7 @@ import typer
 from rich.console import Console
 
 from vardrrunner import api, config, configs, handlers, pipelines, runner
-from vardrrunner.commands.run import _make_run_dir
+from vardrrunner.commands.run import MAX_TARGETS_DEFAULT, _make_run_dir
 
 console = Console()
 
@@ -39,6 +39,7 @@ def run_pipeline(
     severity: str | None = None,
     yes: bool = False,
     continue_on_error: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ) -> None:
     """Run every stage of a pipeline in order against a program."""
     stages = pipelines.PIPELINES.get(name)
@@ -77,7 +78,7 @@ def run_pipeline(
     for i, stage in enumerate(stages, 1):
         console.rule(f"Stage {i}/{total} — {stage.tool} (from {stage.source})")
         should_continue, handoff_path = _run_stage(
-            client, stage, program_id, severity, continue_on_error, handoff_path
+            client, stage, program_id, severity, continue_on_error, handoff_path, max_targets
         )
         if not should_continue:
             break
@@ -92,6 +93,7 @@ def _run_stage(
     severity: str | None,
     continue_on_error: bool,
     handoff_path: Path | None = None,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ) -> tuple[bool, Path | None]:
     """Run one pipeline stage. Returns (should_continue, handoff_file_for_next_stage)."""
     handler = handlers.REGISTRY[stage.tool]
@@ -117,6 +119,13 @@ def _run_stage(
     if not targets:
         console.print("[yellow]No targets for this stage — stopping pipeline.[/yellow]")
         return False, None
+
+    if max_targets > 0 and len(targets) > max_targets:
+        console.print(
+            f"[red]Aborted:[/red] {len(targets)} targets exceeds --max-targets {max_targets}. "
+            f"Pass [bold]--max-targets 0[/bold] to disable, or raise the limit explicitly."
+        )
+        return continue_on_error, None
 
     console.print(
         f"{len(targets)} target(s); running {handler.running_label(targets, config_obj)}…"
