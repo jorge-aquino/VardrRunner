@@ -52,12 +52,12 @@ def test_run_nmap_clamps_timing(tmp_path):
     assert "-T9" not in args
 
 
-def test_run_nmap_returncode(tmp_path):
+def test_run_nmap_raises_on_nonzero_exit(tmp_path):
     output = tmp_path / "nmap.xml"
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1)
-        rc = runner.run_nmap(["10.0.0.1"], output)
-    assert rc == 1
+        with pytest.raises(runner.ToolError):
+            runner.run_nmap(["10.0.0.1"], output)
 
 
 # ---------------------------------------------------------------------------

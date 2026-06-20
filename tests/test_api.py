@@ -5,6 +5,8 @@ resilience contract: idempotent methods retry on transient failures with backoff
 while POST/PATCH never auto-retry (so a dropped response can't double-act).
 """
 
+from unittest.mock import patch
+
 from urllib3.util.retry import Retry
 
 from vardrrunner import __version__
@@ -61,3 +63,60 @@ def test_retries_and_backoff_are_configurable():
     retry = _client(retries=5, backoff_factor=1.0).session.get_adapter("https://x").max_retries
     assert retry.total == 5
     assert retry.backoff_factor == 1.0
+
+
+# ---------------------------------------------------------------------------
+# recon() pagination
+# ---------------------------------------------------------------------------
+
+
+def test_recon_single_page_when_results_fit():
+    """If the first page is smaller than the requested limit, stop after one request."""
+    c = _client()
+    page = [{"url": "https://a.com"}, {"url": "https://b.com"}]
+    with patch.object(c, "get", return_value={"recon": page}) as mock_get:
+        result = c.recon("p1", limit=100)
+    assert result == page
+    assert mock_get.call_count == 1
+
+
+def test_recon_paginates_until_exhausted():
+    """Multiple pages are requested when the first page is full (== page_size)."""
+    page_size = VardrMapClient.RECON_PAGE_SIZE
+    page1 = [{"url": f"https://{i}.com"} for i in range(page_size)]
+    page2 = [{"url": "https://extra.com"}]
+
+    c = _client()
+    call_count = 0
+
+    def fake_get(path, params=None):
+        nonlocal call_count
+        call_count += 1
+        return {"recon": page1 if call_count == 1 else page2}
+
+    with patch.object(c, "get", side_effect=fake_get):
+        result = c.recon("p1", limit=page_size + 10)
+
+    assert len(result) == page_size + 1
+    assert call_count == 2
+
+
+def test_recon_respects_caller_limit():
+    """The caller's limit caps how many items we collect even when pages are full."""
+    c = _client()
+    # Each call returns 3 items; caller wants 5 → collect first 5 only.
+    calls = [0]
+
+    def fake_get(path, params=None):
+        calls[0] += 1
+        fetch = (params or {}).get("limit", 3)
+        return {"recon": [{"url": f"https://{calls[0]}-{i}.com"} for i in range(fetch)]}
+
+    with patch.object(c, "get", side_effect=fake_get):
+        result = c.recon("p1", limit=5)
+
+    assert len(result) == 5
+
+
+def test_recon_page_size_constant():
+    assert VardrMapClient.RECON_PAGE_SIZE == 500

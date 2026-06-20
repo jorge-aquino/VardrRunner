@@ -34,6 +34,10 @@ class ToolTimeout(Exception):
     """Raised when a tool subprocess exceeds its timeout. The process is killed."""
 
 
+class ToolError(Exception):
+    """Raised when a tool subprocess exits with a non-zero return code."""
+
+
 def _resolve_timeout(override: int | None) -> int:
     """Pick the effective timeout: explicit override > env var > default."""
     if override and override > 0:
@@ -49,10 +53,11 @@ def _resolve_timeout(override: int | None) -> int:
     return DEFAULT_TOOL_TIMEOUT
 
 
-def _run_tool(cmd: list[str], temp_file: str, tool: str, timeout: int | None) -> int:
+def _run_tool(cmd: list[str], temp_file: str, tool: str, timeout: int | None) -> None:
     """Run an allowlisted command with a timeout, always cleaning up the temp file.
 
     Raises ToolTimeout (after killing the process) if the run exceeds the limit.
+    Raises ToolError on any non-zero exit code — callers must not treat failure as success.
     """
     seconds = _resolve_timeout(timeout)
     try:
@@ -61,7 +66,8 @@ def _run_tool(cmd: list[str], temp_file: str, tool: str, timeout: int | None) ->
         raise ToolTimeout(f"{tool} timed out after {seconds}s and was killed") from e
     finally:
         Path(temp_file).unlink(missing_ok=True)
-    return result.returncode
+    if result.returncode != 0:
+        raise ToolError(f"{tool} exited with code {result.returncode}")
 
 
 def tool_available(name: str) -> bool:
@@ -69,17 +75,32 @@ def tool_available(name: str) -> bool:
     return shutil.which(ALLOWED_TOOLS.get(name, "")) is not None
 
 
+# ProjectDiscovery tools use -version; nmap uses --version.
+_VERSION_ARGS: dict[str, list[str]] = {
+    "httpx": ["-version"],
+    "nuclei": ["-version"],
+    "subfinder": ["-version"],
+    "dnsx": ["-version"],
+    "naabu": ["-version"],
+    "nmap": ["--version"],
+}
+
+
 def tool_version(name: str) -> str | None:
-    """Return the version string (e.g. 'v1.6.9') for an installed tool, or None."""
+    """Return the version string for an installed tool, or None."""
     binary = ALLOWED_TOOLS.get(name, "")
     if not binary or not shutil.which(binary):
         return None
+    args = _VERSION_ARGS.get(name, ["-version"])
     try:
         result = subprocess.run(
-            [binary, "-version"], capture_output=True, text=True, timeout=5, check=False
+            [binary] + args, capture_output=True, text=True, timeout=5, check=False
         )
         output = (result.stdout or "") + (result.stderr or "")
-        match = re.search(r"v\d+\.\d+\.\d+", output)
+        # Try vX.Y.Z first (ProjectDiscovery), then bare X.Y.Z (nmap-style).
+        match = re.search(r"v\d+\.\d+\.\d+", output) or re.search(
+            r"\b(\d+\.\d+(?:\.\d+)?)\b", output
+        )
         return match.group(0) if match else "unknown"
     except Exception:
         return None
@@ -115,7 +136,7 @@ def strip_url_to_host(url: str) -> str:
     return parsed.hostname or stripped
 
 
-def run_httpx(targets: list[str], output_path: Path, timeout: int | None = None) -> int:
+def run_httpx(targets: list[str], output_path: Path, timeout: int | None = None) -> None:
     """Run httpx against a list of targets. Output is JSONL written to output_path."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(targets))
@@ -139,7 +160,7 @@ def run_nuclei(
     severity: str | None = None,
     templates: str | None = None,
     timeout: int | None = None,
-) -> int:
+) -> None:
     """Run nuclei against a list of targets. Output is JSONL written to output_path."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(targets))
@@ -167,7 +188,7 @@ def run_nmap(
     top_ports: int = 100,
     timing: int = 3,
     timeout: int | None = None,
-) -> int:
+) -> None:
     """Run nmap with service detection against a list of targets.
 
     Safe profile only: --top-ports N, -sV with low intensity, -T{0-4}.
@@ -248,7 +269,7 @@ def parse_nmap_xml(xml_path: Path) -> list[dict]:
     return services
 
 
-def run_subfinder(domains: list[str], output_path: Path, timeout: int | None = None) -> int:
+def run_subfinder(domains: list[str], output_path: Path, timeout: int | None = None) -> None:
     """Run subfinder against a list of root domains. Output is one host per line."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(domains))
@@ -265,7 +286,7 @@ def run_subfinder(domains: list[str], output_path: Path, timeout: int | None = N
     return _run_tool(cmd, domains_file, "subfinder", timeout)
 
 
-def run_dnsx(hosts: list[str], output_path: Path, timeout: int | None = None) -> int:
+def run_dnsx(hosts: list[str], output_path: Path, timeout: int | None = None) -> None:
     """Resolve a list of hosts with dnsx. Output is the resolvable hosts, one per line."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(hosts))
@@ -284,7 +305,7 @@ def run_dnsx(hosts: list[str], output_path: Path, timeout: int | None = None) ->
 
 def run_naabu(
     hosts: list[str], output_path: Path, top_ports: int = 100, timeout: int | None = None
-) -> int:
+) -> None:
     """Port-scan a list of hosts with naabu (top-N ports). Output is JSON lines."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
         tmp.write("\n".join(hosts))

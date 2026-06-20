@@ -124,3 +124,41 @@ def test_json_output_is_structured(monkeypatch, capsys):
 def test_check_dataclass_shape():
     c = Check("x", Health.OK, "fine")
     assert c.remediation == "" and c.status is Health.OK
+
+
+def test_auth_skipped_when_url_invalid(monkeypatch):
+    """_check_auth returns WARN (not a network call) when the backend URL is bad."""
+    monkeypatch.setenv("VARDRMAP_URL", "http://remote.example.com")  # non-local http → invalid
+    monkeypatch.setenv("VARDRMAP_API_KEY", "vmap_ok")
+    check = doctor._check_auth()
+    assert check.status is Health.WARN
+    assert "invalid backend URL" in check.detail
+
+
+def test_corrupt_config_fails_doctor(tmp_path, monkeypatch):
+    """A malformed config.json produces a FAIL check and doctor exits non-zero."""
+    cf = tmp_path / "config.json"
+    cf.write_text("{broken")
+    monkeypatch.setattr("vardrrunner.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("vardrrunner.config.CONFIG_FILE", cf)
+    monkeypatch.setattr("vardrrunner.config.RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr("vardrrunner.keychain.get_key", lambda url: None)
+    with patch("vardrrunner.runner.tool_available", return_value=True):
+        code = _run()
+    assert code == 1
+
+
+def test_corrupt_config_still_runs_tool_checks(tmp_path, monkeypatch):
+    """Even with a broken config, doctor still reports tool availability."""
+    cf = tmp_path / "config.json"
+    cf.write_text("not-json")
+    monkeypatch.setattr("vardrrunner.config.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("vardrrunner.config.CONFIG_FILE", cf)
+    monkeypatch.setattr("vardrrunner.config.RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr("vardrrunner.keychain.get_key", lambda url: None)
+    with patch("vardrrunner.runner.tool_available", return_value=False):
+        checks = doctor._collect()
+    names = [c.name for c in checks]
+    # Config-file check present, and tool checks still ran.
+    assert "config file" in names
+    assert any(n.startswith("tool:") for n in names)

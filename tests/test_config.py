@@ -108,3 +108,27 @@ def test_require_auth_missing_credentials():
 
     with pytest.raises(typer.BadParameter):
         config.require_auth()
+
+
+# --------------------------------------------------------------------------- #
+# Corrupt config file
+# --------------------------------------------------------------------------- #
+
+
+def test_load_raises_on_malformed_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "config.json")
+    (tmp_path / "config.json").write_text("{not valid json")
+    with pytest.raises(config.InvalidConfigFile):
+        config.load()
+
+
+def test_load_error_message_includes_filename(tmp_path, monkeypatch):
+    cf = tmp_path / "config.json"
+    monkeypatch.setattr(config, "CONFIG_FILE", cf)
+    cf.write_text("???")
+    try:
+        config.load()
+    except config.InvalidConfigFile as e:
+        assert str(cf) in str(e)
+    else:
+        pytest.fail("InvalidConfigFile not raised")

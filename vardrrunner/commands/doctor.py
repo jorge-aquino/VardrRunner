@@ -108,6 +108,12 @@ def _check_auth() -> Check:
     if not url or not key:
         return Check("api auth", Health.FAIL, "skipped — no credentials", "See credentials above.")
     try:
+        config.validate_api_url(url)
+    except config.InvalidApiUrl:
+        return Check(
+            "api auth", Health.WARN, "skipped — invalid backend URL", "Fix backend URL above."
+        )
+    try:
         user = api.VardrMapClient(url, key).whoami()
         who = user.get("username") or user.get("github_id") or "unknown"
         return Check("api auth", Health.OK, f"authenticated as {who}")
@@ -225,9 +231,22 @@ def _check_pipelines() -> list[Check]:
 
 def _collect() -> list[Check]:
     checks: list[Check] = []
-    checks += _check_credentials()
-    checks.append(_check_permissions())
-    checks.append(_check_auth())
+    # Credential/permissions/auth checks all read the config file — if it's
+    # corrupted we surface one clear FAIL and skip the auth attempt (which
+    # would crash or mislead with a noisy follow-up error).
+    try:
+        checks += _check_credentials()
+        checks.append(_check_permissions())
+        checks.append(_check_auth())
+    except config.InvalidConfigFile as e:
+        checks.append(
+            Check(
+                "config file",
+                Health.FAIL,
+                str(e),
+                f"Delete {config.CONFIG_FILE} or run `vardrrunner login vardrmap` to reset.",
+            )
+        )
     checks.append(_check_daemon())
     checks.append(_check_run_dir())
     checks.append(_check_disk())

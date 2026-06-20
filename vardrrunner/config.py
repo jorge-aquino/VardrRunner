@@ -32,6 +32,10 @@ class InvalidApiUrl(ValueError):
     """The API URL is malformed or would send the key over plain HTTP."""
 
 
+class InvalidConfigFile(ValueError):
+    """The config file exists but contains invalid JSON."""
+
+
 def config_dir() -> Path:
     return CONFIG_DIR
 
@@ -43,8 +47,15 @@ def runs_dir() -> Path:
 def load() -> dict:
     if not CONFIG_FILE.exists():
         return {}
-    with CONFIG_FILE.open() as f:
-        return json.load(f)
+    try:
+        with CONFIG_FILE.open() as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise InvalidConfigFile(
+            f"Config file contains invalid JSON: {CONFIG_FILE}\n"
+            f"  {e}\n"
+            f"  Run `vardrrunner login vardrmap` or delete the file to reset."
+        ) from e
 
 
 def save(data: dict) -> None:

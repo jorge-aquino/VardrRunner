@@ -7,6 +7,26 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-06-20
+Reliability hardening. See [changelog/v0.20.1.md](changelog/v0.20.1.md) for details.
+
+### Fixed
+- **Recon pagination.** `api.recon()` now paginates in chunks of 500 instead of issuing one
+  request with the caller's `limit`. Eliminates the live 422 seen at `limit=736` and makes
+  large recon sets reliable for httpx, nuclei, naabu, and pipelines.
+- **Tool failures are now fatal.** `runner._run_tool()` raises `ToolError` on any non-zero exit
+  code; every `run_*` function signature changed from `-> int` to `-> None`. A failed httpx,
+  nuclei, subfinder, dnsx, nmap, or naabu run marks the job **failed** with the exit code
+  rather than silently drifting into "done".
+- **`doctor` skips auth after an invalid backend URL.** `_check_auth()` now validates the URL
+  before making any network call, returning a WARN instead of a noisy follow-up failure.
+- **Corrupt config file is handled gracefully.** `config.load()` raises `InvalidConfigFile`
+  (not a raw `JSONDecodeError`) on malformed JSON. `doctor._collect()` catches it, emits one
+  clear FAIL check with a remediation hint, and continues running tool/disk/daemon checks.
+- **`nmap` version detection fixed.** `tool_version()` now uses `--version` for nmap (was
+  `-version`) and falls back to a `X.Y.Z`-style regex in addition to `vX.Y.Z`, so nmap,
+  dnsx, and naabu report actual version numbers instead of "unknown".
+
 ## [0.20.0] — 2026-06-17
 Secure credentials + broader recon coverage. See
 [changelog/v0.20.0.md](changelog/v0.20.0.md) for the rollup.

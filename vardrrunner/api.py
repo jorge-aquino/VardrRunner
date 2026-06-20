@@ -88,13 +88,30 @@ class VardrMapClient:
         """Returns {"in": [...], "out": [...]} scope lists."""
         return self.program(program_id).get("scope", {"in": [], "out": []})
 
+    # Backend rejects limit values above this with 422.
+    RECON_PAGE_SIZE = 500
+
     def recon(
         self, program_id: str, limit: int = 100, status_code: int | None = None
     ) -> list[dict]:
-        params: dict = {"limit": limit, "offset": 0}
-        if status_code is not None:
-            params["status_code"] = status_code
-        return self.get(f"/programs/{program_id}/recon", params=params).get("recon", [])
+        """Fetch recon items, paginating in RECON_PAGE_SIZE chunks to avoid backend 422s."""
+        results: list[dict] = []
+        offset = 0
+        page_size = min(limit, self.RECON_PAGE_SIZE)
+
+        while len(results) < limit:
+            remaining = limit - len(results)
+            fetch = min(remaining, page_size)
+            params: dict = {"limit": fetch, "offset": offset}
+            if status_code is not None:
+                params["status_code"] = status_code
+            page = self.get(f"/programs/{program_id}/recon", params=params).get("recon", [])
+            results.extend(page)
+            if len(page) < fetch:
+                break
+            offset += fetch
+
+        return results
 
     def import_file(self, program_id: str, tool_type: str, file_path: str) -> dict:
         with open(file_path, "rb") as fh:

@@ -278,3 +278,76 @@ def test_run_raises_tooltimeout_and_cleans_up(tmp_path):
     # The temp targets file (cmd is ["httpx", "-l", <file>, ...]) must be cleaned up.
     targets_file = mock_run.call_args[0][0][2]
     assert not Path(targets_file).exists()
+
+
+# ---------------------------------------------------------------------------
+# ToolError — non-zero exit must not silently succeed
+# ---------------------------------------------------------------------------
+
+
+def test_run_raises_toolerror_on_nonzero_exit(tmp_path):
+    output = tmp_path / "out.jsonl"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        with pytest.raises(runner.ToolError, match="httpx exited with code 1"):
+            runner.run_httpx(["https://example.com"], output)
+
+
+def test_run_does_not_raise_on_zero_exit(tmp_path):
+    output = tmp_path / "out.jsonl"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        runner.run_httpx(["https://example.com"], output)  # should not raise
+
+
+def test_nuclei_raises_toolerror_on_failure(tmp_path):
+    output = tmp_path / "out.jsonl"
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=2)
+        with pytest.raises(runner.ToolError):
+            runner.run_nuclei(["https://example.com"], output)
+
+
+def test_nmap_raises_toolerror_on_failure(tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=3)
+        with pytest.raises(runner.ToolError):
+            runner.run_nmap(["10.0.0.1"], tmp_path / "nmap.xml")
+
+
+def test_subfinder_raises_toolerror_on_failure(tmp_path):
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        with pytest.raises(runner.ToolError):
+            runner.run_subfinder(["example.com"], tmp_path / "out.txt")
+
+
+# ---------------------------------------------------------------------------
+# tool_version — per-tool version args and broader regex
+# ---------------------------------------------------------------------------
+
+
+def test_tool_version_uses_dash_dash_version_for_nmap():
+    with patch("shutil.which", return_value="/usr/bin/nmap"), patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            stdout="Nmap version 7.94 ( https://nmap.org )\n", stderr="", returncode=0
+        )
+        version = runner.tool_version("nmap")
+    args = mock_run.call_args[0][0]
+    assert "--version" in args
+    assert version == "7.94"
+
+
+def test_tool_version_uses_single_dash_version_for_httpx():
+    with patch("shutil.which", return_value="/usr/bin/httpx"), patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="", stderr="v1.6.9\n", returncode=0)
+        version = runner.tool_version("httpx")
+    args = mock_run.call_args[0][0]
+    assert "-version" in args
+    assert version == "v1.6.9"
+
+
+def test_tool_version_returns_unknown_when_no_match():
+    with patch("shutil.which", return_value="/usr/bin/httpx"), patch("subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="no version here", stderr="", returncode=0)
+        assert runner.tool_version("httpx") == "unknown"

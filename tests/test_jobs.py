@@ -31,12 +31,12 @@ def test_run_subfinder_uses_arg_list(tmp_path):
         assert "-silent" in args
 
 
-def test_run_subfinder_returncode(tmp_path):
+def test_run_subfinder_raises_on_nonzero_exit(tmp_path):
     output = tmp_path / "out.txt"
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=1)
-        rc = runner.run_subfinder(["example.com"], output)
-    assert rc == 1
+        with pytest.raises(runner.ToolError):
+            runner.run_subfinder(["example.com"], output)
 
 
 # ---------------------------------------------------------------------------
