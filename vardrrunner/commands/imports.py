@@ -7,7 +7,10 @@ from vardrrunner import api, config
 
 console = Console()
 
-SUPPORTED_TOOLS = ["nuclei", "httpx", "ffuf"]
+# Tools whose output the backend's file-import endpoint can ingest directly.
+# subfinder/dnsx convert to httpx-format JSONL before uploading (not raw files).
+# nmap/naabu use create_services (a structured payload), not the file-import path.
+SUPPORTED_TOOLS = ["httpx", "nuclei"]
 
 
 def import_file(tool: str, program_id: str, file: Path):

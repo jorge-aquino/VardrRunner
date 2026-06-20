@@ -1,5 +1,7 @@
 """Direct `run` commands validate options through the same typed configs as jobs."""
 
+import datetime
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,3 +37,33 @@ def test_run_nuclei_rejects_invalid_severity():
                 "prog-1", target="https://app.example.com", severity="bogus", yes=True
             )
     mock_nuclei.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Run directory pruning
+# ---------------------------------------------------------------------------
+
+
+def test_prune_run_dirs_removes_old_dirs(tmp_path):
+    runs = tmp_path / "runs"
+    runs.mkdir()
+
+    old_dir = runs / "20200101T000000"
+    old_dir.mkdir()
+    new_dir = runs / "20991231T235959"
+    new_dir.mkdir()
+
+    # Back-date old_dir so it's older than the prune threshold
+    old_ts = (datetime.datetime.now() - datetime.timedelta(days=10)).timestamp()
+    os.utime(old_dir, (old_ts, old_ts))
+
+    with patch("vardrrunner.commands.run.config.runs_dir", return_value=runs):
+        run_cmd._prune_run_dirs()
+
+    assert not old_dir.exists()
+    assert new_dir.exists()
+
+
+def test_prune_run_dirs_is_a_no_op_when_runs_dir_absent(tmp_path):
+    with patch("vardrrunner.commands.run.config.runs_dir", return_value=tmp_path / "no_runs"):
+        run_cmd._prune_run_dirs()  # must not raise

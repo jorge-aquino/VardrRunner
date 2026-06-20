@@ -29,7 +29,7 @@ def list_pipelines() -> None:
     """Print the available pipelines and their tool chains."""
     console.print("[bold]Available pipelines[/bold]")
     for name, stages in pipelines.PIPELINES.items():
-        chain = " → ".join(s.tool for s in stages)
+        chain = " → ".join(f"{s.tool}[dim]({s.source})[/dim]" for s in stages)
         console.print(f"  [bold]{name}[/bold]: {chain}")
 
 
