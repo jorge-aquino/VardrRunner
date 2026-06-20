@@ -7,6 +7,28 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-06-20
+Run-scoped pipeline isolation. See [changelog/v0.21.0.md](changelog/v0.21.0.md) for details.
+
+### Added
+- **Run-scoped pipeline isolation.** Each `pipeline run` now generates a short run ID
+  (`8-hex`) printed at the start and end. After every stage completes, its discovered
+  targets are extracted from the output and written to a local **handoff file**; the next
+  stage reads from that file instead of the shared backend recon store. This prevents stale
+  recon from earlier runs contaminating later stages.
+- **`ToolHandler.extract_handoff_targets(output)`** — new method on every handler, returns
+  the targets that stage produced for the next stage. `HttpxHandler` extracts URLs/hosts
+  from its JSONL; `SubfinderHandler` and `DnsxHandler` extract hostnames. Terminal handlers
+  (nuclei, nmap, naabu) return `[]` and fall back to backend resolution.
+- **`ToolHandler.normalize_handoff_targets(targets)`** — new method that strips URL
+  scheme/path for host-only tools (nmap, dnsx, naabu), matching what their
+  `resolve_targets()` does for backend recon. Default is identity.
+- **ADR 0005** documents the design decision. See `docs/adr/0005-run-scoped-pipelines.md`.
+
+### Changed
+- `commands/pipeline._run_stage()` return type changed from `bool` to
+  `tuple[bool, Path | None]`. No public API change — `_run_stage` is internal.
+
 ## [0.20.1] — 2026-06-20
 Reliability hardening. See [changelog/v0.20.1.md](changelog/v0.20.1.md) for details.
 

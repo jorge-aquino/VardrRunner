@@ -44,6 +44,23 @@ class ToolHandler(Generic[C]):
         """Push the artifact to the backend. Return a one-line human summary."""
         raise NotImplementedError
 
+    def extract_handoff_targets(self, output: Path) -> list[str]:
+        """Extract targets from this stage's output to pass to the next pipeline stage.
+
+        Returns [] for terminal stages (nuclei, nmap, naabu) or unparseable output.
+        A non-empty return causes the pipeline to write a local handoff file so the
+        next stage reads from it instead of the shared backend recon store.
+        """
+        return []
+
+    def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
+        """Normalize targets read from a handoff file before passing to execute().
+
+        Default is identity. Override for tools that need bare host/IP input (nmap,
+        dnsx, naabu) to strip URL scheme/path the way their resolve_targets() does.
+        """
+        return targets
+
 
 def _resolve_standard(
     client: api.VardrMapClient, program_id: str, target_source: str, config: Any
@@ -79,6 +96,24 @@ class HttpxHandler(ToolHandler[configs.HttpxConfig]):
         result = client.import_file(program_id, "httpx", str(output))
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} result(s)"
+
+    def extract_handoff_targets(self, output: Path) -> list[str]:
+        targets = []
+        try:
+            for line in output.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                val = obj.get("url") or obj.get("host")
+                if val:
+                    targets.append(val)
+        except OSError:
+            pass
+        return targets
 
 
 class NucleiHandler(ToolHandler[configs.NucleiConfig]):
@@ -125,6 +160,9 @@ class NmapHandler(ToolHandler[configs.NmapConfig]):
     def running_label(self, targets, config):
         return f"nmap --top-ports {config.top_ports} against {len(targets)} target(s)"
 
+    def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
+        return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
+
     def execute(self, targets, run_dir, config):
         xml_path = run_dir / "nmap.xml"
         runner.run_nmap(
@@ -170,6 +208,7 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
 
     def execute(self, targets, run_dir, config):
         sf_output = run_dir / "subfinder.txt"
+
         runner.run_subfinder(targets, sf_output, timeout=config.timeout)
         if not sf_output.exists() or sf_output.stat().st_size == 0:
             return None
@@ -188,6 +227,24 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} subdomain(s) as recon targets"
 
+    def extract_handoff_targets(self, output: Path) -> list[str]:
+        targets = []
+        try:
+            for line in output.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                host = obj.get("host")
+                if host:
+                    targets.append(host)
+        except OSError:
+            pass
+        return targets
+
 
 class DnsxHandler(ToolHandler[configs.DnsxConfig]):
     tool = "dnsx"
@@ -202,6 +259,9 @@ class DnsxHandler(ToolHandler[configs.DnsxConfig]):
 
     def running_label(self, targets, config):
         return f"dnsx on {len(targets)} host(s)"
+
+    def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
+        return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
 
     def execute(self, targets, run_dir, config):
         out = run_dir / "dnsx.txt"
@@ -223,6 +283,24 @@ class DnsxHandler(ToolHandler[configs.DnsxConfig]):
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} resolvable host(s)"
 
+    def extract_handoff_targets(self, output: Path) -> list[str]:
+        targets = []
+        try:
+            for line in output.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except ValueError:
+                    continue
+                host = obj.get("host")
+                if host:
+                    targets.append(host)
+        except OSError:
+            pass
+        return targets
+
 
 class NaabuHandler(ToolHandler[configs.NaabuConfig]):
     tool = "naabu"
@@ -236,6 +314,9 @@ class NaabuHandler(ToolHandler[configs.NaabuConfig]):
 
     def running_label(self, targets, config):
         return f"naabu --top-ports {config.top_ports} on {len(targets)} host(s)"
+
+    def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
+        return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
 
     def execute(self, targets, run_dir, config):
         out = run_dir / "naabu.json"

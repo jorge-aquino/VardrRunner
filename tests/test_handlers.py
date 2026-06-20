@@ -147,3 +147,97 @@ def test_naabu_upload_no_ports_skips_create(tmp_path):
         summary = handlers.NaabuHandler().upload(client, "p", tmp_path / "naabu.json")
     assert "no open ports" in summary
     client.create_services.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# extract_handoff_targets
+# ---------------------------------------------------------------------------
+
+
+def test_httpx_extract_handoff_targets_urls(tmp_path):
+    f = tmp_path / "httpx.jsonl"
+    f.write_text(
+        '{"url": "https://app.example.com", "host": "app.example.com"}\n'
+        '{"url": "https://api.example.com", "host": "api.example.com"}\n'
+    )
+    targets = handlers.HttpxHandler().extract_handoff_targets(f)
+    assert targets == ["https://app.example.com", "https://api.example.com"]
+
+
+def test_httpx_extract_handoff_falls_back_to_host(tmp_path):
+    f = tmp_path / "httpx.jsonl"
+    f.write_text('{"host": "bare.example.com"}\n')
+    targets = handlers.HttpxHandler().extract_handoff_targets(f)
+    assert targets == ["bare.example.com"]
+
+
+def test_httpx_extract_handoff_skips_invalid_json(tmp_path):
+    f = tmp_path / "httpx.jsonl"
+    f.write_text('{"url": "https://a.com"}\nnot-json\n{"url": "https://b.com"}\n')
+    targets = handlers.HttpxHandler().extract_handoff_targets(f)
+    assert targets == ["https://a.com", "https://b.com"]
+
+
+def test_httpx_extract_handoff_missing_file(tmp_path):
+    assert handlers.HttpxHandler().extract_handoff_targets(tmp_path / "nope.jsonl") == []
+
+
+def test_subfinder_extract_handoff_targets(tmp_path):
+    f = tmp_path / "subfinder_httpx.jsonl"
+    f.write_text(
+        '{"host": "a.example.com", "source": "subfinder"}\n'
+        '{"host": "b.example.com", "source": "subfinder"}\n'
+    )
+    targets = handlers.SubfinderHandler().extract_handoff_targets(f)
+    assert targets == ["a.example.com", "b.example.com"]
+
+
+def test_dnsx_extract_handoff_targets(tmp_path):
+    f = tmp_path / "dnsx_httpx.jsonl"
+    f.write_text(
+        '{"host": "resolved.example.com", "source": "dnsx"}\n'
+        '{"host": "other.example.com", "source": "dnsx"}\n'
+    )
+    targets = handlers.DnsxHandler().extract_handoff_targets(f)
+    assert targets == ["resolved.example.com", "other.example.com"]
+
+
+def test_nuclei_extract_handoff_targets_is_empty(tmp_path):
+    f = tmp_path / "nuclei.jsonl"
+    f.write_text('{"template-id": "cve-2021-44228", "host": "https://a.com"}\n')
+    assert handlers.NucleiHandler().extract_handoff_targets(f) == []
+
+
+def test_nmap_extract_handoff_targets_is_empty(tmp_path):
+    assert handlers.NmapHandler().extract_handoff_targets(tmp_path / "nmap.xml") == []
+
+
+# ---------------------------------------------------------------------------
+# normalize_handoff_targets
+# ---------------------------------------------------------------------------
+
+
+def test_httpx_normalize_handoff_is_identity():
+    targets = ["https://app.example.com", "https://api.example.com"]
+    assert handlers.HttpxHandler().normalize_handoff_targets(targets) == targets
+
+
+def test_nmap_normalize_strips_urls_to_hosts():
+    targets = ["https://app.example.com/path", "http://10.0.0.1:8080"]
+    result = handlers.NmapHandler().normalize_handoff_targets(targets)
+    assert result == ["app.example.com", "10.0.0.1"]
+
+
+def test_nmap_normalize_deduplicates():
+    targets = ["https://app.example.com/x", "https://app.example.com/y"]
+    assert handlers.NmapHandler().normalize_handoff_targets(targets) == ["app.example.com"]
+
+
+def test_dnsx_normalize_strips_urls_to_hosts():
+    targets = ["https://sub.example.com"]
+    assert handlers.DnsxHandler().normalize_handoff_targets(targets) == ["sub.example.com"]
+
+
+def test_naabu_normalize_strips_urls_to_hosts():
+    targets = ["https://host.example.com:443/path"]
+    assert handlers.NaabuHandler().normalize_handoff_targets(targets) == ["host.example.com"]
