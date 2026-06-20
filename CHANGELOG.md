@@ -7,6 +7,16 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-06-20
+
+### Added
+- **Daemon log rotation.** When `--log-file` is specified, log output is now written
+  through a `RotatingFileHandler` (5 MB per file, 3 backup files) instead of an
+  unbounded append-only file. Prevents runaway disk use on long-lived VPS daemons.
+- **Daemon log timestamps.** Every line written to the log file is prefixed with an
+  ISO 8601 timestamp (`YYYY-MM-DDTHH:MM:SS`) so operators can correlate events and
+  grep logs by time without relying on filesystem metadata.
+
 ## [0.21.0] — 2026-06-20
 Run-scoped pipeline isolation. See [changelog/v0.21.0.md](changelog/v0.21.0.md) for details.
 

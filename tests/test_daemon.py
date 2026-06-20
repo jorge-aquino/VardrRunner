@@ -338,6 +338,72 @@ class TestStart:
 
 
 # ---------------------------------------------------------------------------
+# _RotatingLogFile
+# ---------------------------------------------------------------------------
+
+
+class TestRotatingLogFile:
+    def test_writes_timestamped_lines(self, tmp_path):
+        log = tmp_path / "daemon.log"
+        f = daemon_mod._RotatingLogFile(log)
+        f.write("hello from daemon\n")
+        f.flush()
+        f.close()
+
+        content = log.read_text(encoding="utf-8")
+        assert "hello from daemon" in content
+        # Timestamp prefix: YYYY-MM-DDTHH:MM:SS
+        import re
+
+        assert re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", content)
+
+    def test_buffers_partial_writes(self, tmp_path):
+        log = tmp_path / "daemon.log"
+        f = daemon_mod._RotatingLogFile(log)
+        f.write("part one ")
+        f.write("part two\n")
+        f.close()
+
+        content = log.read_text(encoding="utf-8")
+        assert "part one part two" in content
+
+    def test_returns_byte_count(self, tmp_path):
+        log = tmp_path / "daemon.log"
+        f = daemon_mod._RotatingLogFile(log)
+        n = f.write("test\n")
+        f.close()
+        assert n == 5
+
+    def test_no_crash_when_runs_dir_absent(self, tmp_path):
+        log = tmp_path / "subdir" / "daemon.log"
+        log.parent.mkdir()
+        f = daemon_mod._RotatingLogFile(log)
+        f.write("ok\n")
+        f.close()
+        assert log.exists()
+
+    def test_start_writes_to_log_file(self, pid_file, tmp_path):
+        log = tmp_path / "daemon.log"
+
+        with (
+            patch("vardrrunner.commands.daemon.threading.Event", _fake_event_factory(1)),
+            patch("vardrrunner.commands.daemon.threading.Thread"),
+            patch("vardrrunner.commands.daemon.signal.signal"),
+            patch(
+                "vardrrunner.commands.daemon.config.require_auth",
+                return_value=("http://api", "key"),
+            ),
+            patch("vardrrunner.commands.daemon.api.VardrMapClient"),
+            patch("vardrrunner.commands.daemon.execute_pending_jobs", return_value=0),
+            patch("vardrrunner.commands.daemon.send_heartbeat"),
+        ):
+            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=log)
+
+        content = log.read_text(encoding="utf-8")
+        assert "Daemon started" in content
+
+
+# ---------------------------------------------------------------------------
 # execute_pending_jobs
 # ---------------------------------------------------------------------------
 
