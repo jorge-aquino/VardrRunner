@@ -175,7 +175,7 @@ def start(
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         _log = _RotatingLogFile(log_file)
-        out = Console(file=_log, highlight=False, markup=False)
+        out = Console(file=_log, highlight=False, markup=False)  # type: ignore[arg-type]
 
     pid = os.getpid()
     PID_FILE.write_text(str(pid))
