@@ -7,6 +7,23 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-06-20
+
+### Fixed
+- **`import` command no longer lists `ffuf` as supported.** `ffuf` has no handler,
+  no backend importer, and would fail at runtime. `SUPPORTED_TOOLS` is now `["httpx",
+  "nuclei"]` — the two formats the backend's file-import endpoint actually accepts.
+  `subfinder`/`dnsx` are excluded because they convert to httpx-format JSONL before
+  uploading; `nmap`/`naabu` use `create_services`, not file import.
+- **Run directories are pruned automatically.** `_make_run_dir()` now deletes run
+  directories older than 7 days before creating a new one, so pipeline artifacts don't
+  accumulate indefinitely on long-running VPS daemons.
+
+### Changed
+- **`pipeline list` now shows each stage's data source.** Output is now
+  `subfinder(scope) → httpx(recon) → nuclei(recon)` so operators can see data flow
+  at a glance without reading the source code.
+
 ## [0.21.0] — 2026-06-20
 Run-scoped pipeline isolation. See [changelog/v0.21.0.md](changelog/v0.21.0.md) for details.
 

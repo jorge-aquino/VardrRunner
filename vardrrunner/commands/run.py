@@ -9,6 +9,7 @@ execute + upload. So `run nmap --timing 9` is rejected exactly like a job would 
 """
 
 import datetime
+import shutil
 from pathlib import Path
 
 import typer
@@ -16,13 +17,28 @@ from rich.console import Console
 
 from vardrrunner import api, config, configs, handlers, runner
 
+_PRUNE_AFTER_DAYS = 7
+
+
+def _prune_run_dirs() -> None:
+    """Delete run directories older than _PRUNE_AFTER_DAYS days."""
+    runs = config.runs_dir()
+    if not runs.exists():
+        return
+    cutoff = datetime.datetime.now().timestamp() - _PRUNE_AFTER_DAYS * 86400
+    for d in runs.iterdir():
+        if d.is_dir() and d.stat().st_mtime < cutoff:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 # Re-exported so existing call sites and tests can patch them here.
-from vardrrunner.targets import _is_wildcard, _resolve_targets  # noqa: F401
+from vardrrunner.targets import _is_wildcard, _resolve_targets  # noqa: E402, F401
 
 console = Console()
 
 
 def _make_run_dir() -> Path:
+    _prune_run_dirs()
     ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     run_dir = config.runs_dir() / ts
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -39,6 +39,14 @@ def test_list_pipelines_runs(capsys):
     assert "recon" in out and "subfinder" in out
 
 
+def test_list_pipelines_shows_stage_sources(capsys):
+    pipeline_cmd.list_pipelines()
+    out = capsys.readouterr().out
+    # Each stage should show its source (scope/recon) so operators can see data flow.
+    assert "scope" in out
+    assert "recon" in out
+
+
 def test_run_pipeline_unknown_name_exits():
     with pytest.raises(typer.Exit):
         pipeline_cmd.run_pipeline("nope", "prog-1", yes=True)
