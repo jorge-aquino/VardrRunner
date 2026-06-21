@@ -36,6 +36,19 @@ from vardrrunner.targets import _is_wildcard, _resolve_targets  # noqa: E402, F4
 
 console = Console()
 
+# Default cap on target count; 0 disables the check.
+MAX_TARGETS_DEFAULT = 500
+
+
+def _check_target_cap(targets: list[str], max_targets: int) -> None:
+    """Abort if target count exceeds max_targets. Skipped when max_targets == 0."""
+    if max_targets > 0 and len(targets) > max_targets:
+        console.print(
+            f"[red]Aborted:[/red] {len(targets)} targets exceeds --max-targets {max_targets}. "
+            f"Pass [bold]--max-targets 0[/bold] to disable, or raise the limit explicitly."
+        )
+        raise typer.Exit(1)
+
 
 def _make_run_dir() -> Path:
     _prune_run_dirs()
@@ -107,6 +120,7 @@ def run_httpx(
     limit: int = 100,
     status_code: int | None = None,
     yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ):
     """Run httpx and upload results to VardrMap."""
     runner.check_tool("httpx")
@@ -120,12 +134,17 @@ def run_httpx(
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(targets, max_targets)
     _confirm(targets, "httpx", yes)
     cfg = _build_config("httpx", {"limit": limit, "status_code": status_code})
     _finish("httpx", client, program_id, targets, cfg, _make_run_dir())
 
 
-def run_subfinder(program_id: str, yes: bool = False):
+def run_subfinder(
+    program_id: str,
+    yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
+):
     """Run subfinder against wildcard scope entries and upload discovered hosts as recon."""
     runner.check_tool("subfinder")
     url, key = config.require_auth()
@@ -137,6 +156,7 @@ def run_subfinder(program_id: str, yes: bool = False):
         console.print("[yellow]No wildcard scope entries found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(domains, max_targets)
     _confirm(domains, "subfinder", yes)
     _finish("subfinder", client, program_id, domains, cfg, _make_run_dir())
 
@@ -152,6 +172,7 @@ def run_nuclei(
     severity: str | None = None,
     templates: str | None = None,
     yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ):
     """Run nuclei and upload results to VardrMap."""
     runner.check_tool("nuclei")
@@ -165,6 +186,7 @@ def run_nuclei(
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(targets, max_targets)
     _confirm(targets, "nuclei", yes)
     # Validates the severity filter (same as a job would) before any work.
     cfg = _build_config(
@@ -189,6 +211,7 @@ def run_nmap(
     top_ports: int = 100,
     timing: int = 3,
     yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ):
     """Run nmap service discovery and upload open ports to VardrMap's services API."""
     runner.check_tool("nmap")
@@ -204,6 +227,7 @@ def run_nmap(
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(targets, max_targets)
     _confirm(targets, "nmap", yes)
     # Validates timing (0-4) and top_ports up front — `--timing 9` is rejected, not clamped.
     cfg = _build_config("nmap", {"top_ports": top_ports, "timing": timing, "limit": limit})
@@ -218,6 +242,7 @@ def run_dnsx(
     targets_file: Path | None = None,
     limit: int = 500,
     yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ):
     """Resolve hosts with dnsx and upload the resolvable ones as recon targets."""
     runner.check_tool("dnsx")
@@ -230,6 +255,7 @@ def run_dnsx(
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(targets, max_targets)
     _confirm(targets, "dnsx", yes)
     cfg = _build_config("dnsx", {"limit": limit})
     _finish("dnsx", client, program_id, targets, cfg, _make_run_dir())
@@ -244,6 +270,7 @@ def run_naabu(
     limit: int = 500,
     top_ports: int = 100,
     yes: bool = False,
+    max_targets: int = MAX_TARGETS_DEFAULT,
 ):
     """Port-scan hosts with naabu and upload open ports to VardrMap's services API."""
     runner.check_tool("naabu")
@@ -256,6 +283,7 @@ def run_naabu(
         console.print("[yellow]No targets found.[/yellow]")
         raise typer.Exit(0)
 
+    _check_target_cap(targets, max_targets)
     _confirm(targets, "naabu", yes)
     cfg = _build_config("naabu", {"top_ports": top_ports, "limit": limit})
     _finish("naabu", client, program_id, targets, cfg, _make_run_dir())

@@ -52,6 +52,57 @@ def test_run_pipeline_unknown_name_exits():
         pipeline_cmd.run_pipeline("nope", "prog-1", yes=True)
 
 
+# ---------------------------------------------------------------------------
+# max_targets guardrail
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_aborts_when_stage_exceeds_max_targets(tmp_path):
+    """Pipeline stops and does not run the tool when targets > max_targets."""
+    client = MagicMock()
+    # 3 wildcards → 3 domains handed to subfinder
+    client.scope.return_value = {
+        "in": [{"value": "*.a.com"}, {"value": "*.b.com"}, {"value": "*.c.com"}],
+        "out": [],
+    }
+
+    with (
+        patch("vardrrunner.commands.pipeline.config.require_auth", return_value=("https://a", "k")),
+        patch("vardrrunner.commands.pipeline.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.pipeline._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.runner.run_subfinder", side_effect=_fake_tool) as mock_run,
+    ):
+        # cap at 2 — 3 targets should trip it
+        pipeline_cmd.run_pipeline("quick", "prog-1", yes=True, max_targets=2)
+
+    mock_run.assert_not_called()
+    client.import_file.assert_not_called()
+
+
+def test_pipeline_disabled_cap_runs_all_stages(tmp_path):
+    """max_targets=0 disables the guardrail; all stages execute normally."""
+    client = MagicMock()
+    client.scope.return_value = {
+        "in": [{"value": f"*.s{i}.com"} for i in range(10)],
+        "out": [],
+    }
+    client.import_file.return_value = {"import_record": {"imported_count": 10}}
+
+    with (
+        patch("vardrrunner.commands.pipeline.config.require_auth", return_value=("https://a", "k")),
+        patch("vardrrunner.commands.pipeline.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.pipeline._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.runner.run_subfinder", side_effect=_fake_tool),
+    ):
+        # 10 domains, cap disabled → should run without aborting
+        pipeline_cmd.run_pipeline("quick", "prog-1", yes=True, max_targets=0)
+
+    # subfinder stage ran and uploaded
+    assert client.import_file.call_count >= 1
+
+
 def test_run_pipeline_invalid_severity_exits():
     with pytest.raises(typer.Exit):
         pipeline_cmd.run_pipeline("recon", "prog-1", severity="bogus", yes=True)
