@@ -17,6 +17,8 @@ unconditionally kills the target. Never use os.kill(pid, 0) as a liveness
 probe on Windows.
 """
 
+import logging
+import logging.handlers
 import os
 import shutil
 import signal
@@ -38,6 +40,54 @@ PID_FILE = Path.home() / ".vardrrunner.pid"
 DEFAULT_LOG = Path.home() / ".vardrrunner.log"
 
 _IS_WINDOWS = os.name == "nt"
+
+# Rotate at 5 MB, keep 3 backups (≈ 20 MB total log budget).
+_LOG_MAX_BYTES = 5 * 1024 * 1024
+_LOG_BACKUP_COUNT = 3
+
+
+class _RotatingLogFile:
+    """File-like object backed by a RotatingFileHandler so Rich Console can write to it.
+
+    Rich calls write() with arbitrary chunks (may or may not end with '\\n'). We buffer
+    until a newline arrives, then emit each complete line to the logger so the
+    timestamp formatter runs once per logical line rather than per chunk.
+    """
+
+    def __init__(self, path: Path) -> None:
+        handler = logging.handlers.RotatingFileHandler(
+            path,
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s  %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
+        )
+        self._logger = logging.getLogger(f"vardrrunner.daemon.{id(self)}")
+        self._logger.addHandler(handler)
+        self._logger.setLevel(logging.INFO)
+        self._logger.propagate = False
+        self._handler = handler
+        self._buf = ""
+
+    def write(self, data: str) -> int:
+        self._buf += data
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self._logger.info(line)
+        return len(data)
+
+    def flush(self) -> None:
+        if self._buf.strip():
+            self._logger.info(self._buf)
+            self._buf = ""
+
+    def close(self) -> None:
+        self.flush()
+        self._handler.close()
+        self._logger.removeHandler(self._handler)
 
 
 # ── PID helpers ──────────────────────────────────────────────────────────────
@@ -121,11 +171,11 @@ def start(
         raise typer.Exit(1) from e
 
     out = console
-    _fh = None
+    _log = None
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        _fh = open(log_file, "a", buffering=1)
-        out = Console(file=_fh, highlight=False)
+        _log = _RotatingLogFile(log_file)
+        out = Console(file=_log, highlight=False, markup=False)  # type: ignore[arg-type]
 
     pid = os.getpid()
     PID_FILE.write_text(str(pid))
@@ -178,8 +228,8 @@ def start(
         if _read_pid() == pid:
             PID_FILE.unlink(missing_ok=True)
         out.print("[dim]Daemon stopped.[/dim]")
-        if _fh:
-            _fh.close()
+        if _log:
+            _log.close()
 
 
 def stop() -> None:
