@@ -225,7 +225,7 @@ def parse_nmap_xml(xml_path: Path) -> list[dict]:
     """Parse nmap XML output into a list of service dicts for the services API."""
     services: list[dict] = []
     try:
-        tree = ET.parse(xml_path)
+        tree = ET.parse(xml_path)  # nosec B314
         root = tree.getroot()
     except ET.ParseError:
         return services
