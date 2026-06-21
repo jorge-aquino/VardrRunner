@@ -4,6 +4,7 @@ Commands are built as argument lists — shell=True is never used.
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -49,7 +50,11 @@ def _resolve_timeout(override: int | None) -> int:
             if value > 0:
                 return value
         except ValueError:
-            pass
+            logging.warning(
+                "VARDRRUNNER_TOOL_TIMEOUT=%r is not a valid integer — using default %ds",
+                raw,
+                DEFAULT_TOOL_TIMEOUT,
+            )
     return DEFAULT_TOOL_TIMEOUT
 
 

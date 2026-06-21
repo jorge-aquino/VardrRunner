@@ -115,3 +115,188 @@ def test_run_httpx_disabled_cap_runs_all_targets():
         patch("vardrrunner.commands.run._finish"),
     ):
         run_cmd.run_httpx("prog-1", target="x", yes=True, max_targets=0)
+
+
+# ---------------------------------------------------------------------------
+# _make_run_dir
+# ---------------------------------------------------------------------------
+
+
+def test_make_run_dir_creates_timestamped_dir(tmp_path):
+    with patch("vardrrunner.commands.run.config.runs_dir", return_value=tmp_path):
+        d = run_cmd._make_run_dir()
+    assert d.exists()
+    assert d.parent == tmp_path
+
+
+# ---------------------------------------------------------------------------
+# _execute helper
+# ---------------------------------------------------------------------------
+
+
+def test_execute_returns_callable_result():
+    result = run_cmd._execute(lambda: "done")
+    assert result == "done"
+
+
+def test_execute_handles_tool_timeout(capsys):
+    from vardrrunner.runner import ToolTimeout
+
+    with pytest.raises(typer.Exit):
+        run_cmd._execute(lambda: (_ for _ in ()).throw(ToolTimeout("timed out")))
+
+
+# ---------------------------------------------------------------------------
+# run_httpx — no targets path
+# ---------------------------------------------------------------------------
+
+
+def test_run_httpx_no_targets_exits():
+    p = _common_patches([])
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_httpx("prog-1", target="x", yes=True)
+
+
+# ---------------------------------------------------------------------------
+# run_nuclei — no targets path and targets_file source
+# ---------------------------------------------------------------------------
+
+
+def test_run_nuclei_no_targets_exits():
+    p = _common_patches([])
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_nuclei("prog-1", target="x", yes=True)
+
+
+def test_run_nuclei_happy_path(tmp_path):
+    p = _common_patches(["https://app.example.com"])
+    with (
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        patch("vardrrunner.commands.run._finish") as mock_finish,
+        patch("vardrrunner.commands.run._make_run_dir", return_value=tmp_path),
+    ):
+        run_cmd.run_nuclei("prog-1", target="https://app.example.com", yes=True)
+    mock_finish.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run_nmap — no targets after normalization
+# ---------------------------------------------------------------------------
+
+
+def test_run_nmap_no_targets_exits():
+    p = _common_patches([])
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_nmap("prog-1", yes=True)
+
+
+def test_run_nmap_happy_path(tmp_path):
+    p = _common_patches(["https://app.example.com"])
+    with (
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        patch("vardrrunner.commands.run._finish") as mock_finish,
+        patch("vardrrunner.commands.run._make_run_dir", return_value=tmp_path),
+    ):
+        run_cmd.run_nmap("prog-1", target="app.example.com", yes=True)
+    mock_finish.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run_dnsx — no targets after host-strip normalization
+# ---------------------------------------------------------------------------
+
+
+def test_run_dnsx_no_targets_exits():
+    p = _common_patches([])
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_dnsx("prog-1", yes=True)
+
+
+def test_run_dnsx_happy_path(tmp_path):
+    p = _common_patches(["app.example.com"])
+    with (
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        patch("vardrrunner.commands.run._finish") as mock_finish,
+        patch("vardrrunner.commands.run._make_run_dir", return_value=tmp_path),
+    ):
+        run_cmd.run_dnsx("prog-1", target="app.example.com", yes=True)
+    mock_finish.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run_naabu — all paths
+# ---------------------------------------------------------------------------
+
+
+def test_run_naabu_no_targets_exits():
+    p = _common_patches([])
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_naabu("prog-1", yes=True)
+
+
+def test_run_naabu_happy_path(tmp_path):
+    p = _common_patches(["10.0.0.1"])
+    with (
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        patch("vardrrunner.commands.run._finish") as mock_finish,
+        patch("vardrrunner.commands.run._make_run_dir", return_value=tmp_path),
+    ):
+        run_cmd.run_naabu("prog-1", target="10.0.0.1", yes=True)
+    mock_finish.assert_called_once()
+
+
+def test_run_naabu_max_targets_exceeded():
+    # naabu deduplicates with dict.fromkeys; use distinct hosts so the cap triggers
+    distinct_hosts = [f"host{i}.example.com" for i in range(600)]
+    p = _common_patches(distinct_hosts)
+    with p[0], p[1], p[2], p[3]:
+        with pytest.raises(typer.Exit):
+            run_cmd.run_naabu("prog-1", target="x", yes=True, max_targets=500)
+
+
+# ---------------------------------------------------------------------------
+# _finish helper — no output and upload failure paths
+# ---------------------------------------------------------------------------
+
+
+def test_finish_no_output_exits(tmp_path):
+    """_finish exits with code 0 when the tool produces no output file."""
+    handler = MagicMock()
+    handler.running_label.return_value = "httpx [1 target]"
+    handler.execute.return_value = None
+
+    with patch.dict("vardrrunner.handlers.REGISTRY", {"httpx": handler}):
+        with pytest.raises(typer.Exit):
+            run_cmd._finish("httpx", MagicMock(), "p1", ["x"], MagicMock(), tmp_path)
+
+
+def test_finish_upload_failure_exits(tmp_path):
+    """_finish exits with code 1 when the upload call raises."""
+    output = tmp_path / "out.jsonl"
+    output.write_text('{"url":"https://a.com"}\n')
+
+    handler = MagicMock()
+    handler.running_label.return_value = "httpx [1]"
+    handler.execute.return_value = output
+    handler.upload.side_effect = RuntimeError("upload failed")
+
+    with patch.dict("vardrrunner.handlers.REGISTRY", {"httpx": handler}):
+        with pytest.raises(typer.Exit):
+            run_cmd._finish("httpx", MagicMock(), "p1", ["x"], MagicMock(), tmp_path)

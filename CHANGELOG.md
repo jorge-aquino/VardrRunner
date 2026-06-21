@@ -7,6 +7,33 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.22.2] — 2026-06-20
+
+### Changed
+- **Operational logging in silent paths.** `_emit()` in `jobs.py`, `heartbeat.py`
+  quiet mode, and the daemon all now emit `logging.warning()` on failures instead of
+  silently swallowing errors, making issues visible in log aggregation without breaking
+  quiet operation.
+- **VARDRRUNNER_TOOL_TIMEOUT validation.** Invalid values now log a warning and fall
+  back to the default instead of silently being ignored.
+- **Keychain failures logged at DEBUG level.** `available()`, `get_key()`, `set_key()`,
+  and `delete_key()` all emit structured debug logs on exception so operators can
+  diagnose keyring backend issues.
+- **Handler method signatures.** All `ToolHandler` concrete methods are now annotated
+  with their specific config types (e.g. `configs.HttpxConfig`) instead of `Any`,
+  catching config/handler mismatches at type-check time.
+- **JSONL parsing deduplicated.** Shared `_extract_jsonl_field()` utility replaces three
+  identical implementations across `HttpxHandler`, `SubfinderHandler`, and `DnsxHandler`.
+
+### Added
+- **`bandit` security scan in CI.** `bandit -r vardrrunner -ll -q` runs in the lint job
+  on every push, blocking merges on high/medium severity findings.
+- **Coverage threshold raised to 95%.** `pytest --cov-fail-under=95`; new test files
+  cover `api.py` HTTP methods, `keychain.py`, `commands/auth.py`, `commands/programs.py`,
+  `commands/heartbeat.py`, `cli.py` (via `typer.testing.CliRunner`), and the full
+  job lifecycle edge cases (malformed job, unknown tool, config error, target resolution
+  failure, claim race, no output, `ToolTimeout`, generic exception).
+
 ## [0.22.1] — 2026-06-20
 
 ### Added

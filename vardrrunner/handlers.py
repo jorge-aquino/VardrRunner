@@ -17,6 +17,33 @@ from typing import Any, Generic, TypeVar
 from vardrrunner import api, configs, runner
 from vardrrunner.targets import _is_wildcard, _resolve_targets
 
+
+def _extract_jsonl_field(output: Path, *fields: str) -> list[str]:
+    """Read a JSONL file and return the first non-empty value from the given fields.
+
+    Skips blank lines and lines that aren't valid JSON. Returns [] on OSError.
+    Accepts multiple field names; the first non-empty value wins (e.g. "url" then "host").
+    """
+    targets: list[str] = []
+    try:
+        for line in output.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            for field in fields:
+                val = obj.get(field)
+                if val:
+                    targets.append(val)
+                    break
+    except OSError:
+        pass
+    return targets
+
+
 C = TypeVar("C")
 
 
@@ -84,36 +111,29 @@ class HttpxHandler(ToolHandler[configs.HttpxConfig]):
     def parse_config(self, cfg: dict) -> configs.HttpxConfig:
         return configs.HttpxConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.HttpxConfig,
+    ) -> list[str]:
         return _resolve_standard(client, program_id, target_source, config)
 
-    def execute(self, targets, run_dir, config):
+    def execute(
+        self, targets: list[str], run_dir: Path, config: configs.HttpxConfig
+    ) -> Path | None:
         output = run_dir / "httpx.jsonl"
         runner.run_httpx(targets, output, timeout=config.timeout)
         return output
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         result = client.import_file(program_id, "httpx", str(output))
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} result(s)"
 
     def extract_handoff_targets(self, output: Path) -> list[str]:
-        targets = []
-        try:
-            for line in output.read_text().splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except ValueError:
-                    continue
-                val = obj.get("url") or obj.get("host")
-                if val:
-                    targets.append(val)
-        except OSError:
-            pass
-        return targets
+        return _extract_jsonl_field(output, "url", "host")
 
 
 class NucleiHandler(ToolHandler[configs.NucleiConfig]):
@@ -122,14 +142,22 @@ class NucleiHandler(ToolHandler[configs.NucleiConfig]):
     def parse_config(self, cfg: dict) -> configs.NucleiConfig:
         return configs.NucleiConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.NucleiConfig,
+    ) -> list[str]:
         return _resolve_standard(client, program_id, target_source, config)
 
-    def running_label(self, targets, config):
+    def running_label(self, targets: list[str], config: configs.NucleiConfig) -> str:
         label = f"severity={config.severity}" if config.severity else "all"
         return f"nuclei ({label}) against {len(targets)} target(s)"
 
-    def execute(self, targets, run_dir, config):
+    def execute(
+        self, targets: list[str], run_dir: Path, config: configs.NucleiConfig
+    ) -> Path | None:
         output = run_dir / "nuclei.jsonl"
         runner.run_nuclei(
             targets,
@@ -140,7 +168,7 @@ class NucleiHandler(ToolHandler[configs.NucleiConfig]):
         )
         return output
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         result = client.import_file(program_id, "nuclei", str(output))
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} finding(s)"
@@ -152,18 +180,24 @@ class NmapHandler(ToolHandler[configs.NmapConfig]):
     def parse_config(self, cfg: dict) -> configs.NmapConfig:
         return configs.NmapConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.NmapConfig,
+    ) -> list[str]:
         raw = _resolve_standard(client, program_id, target_source, config)
         # nmap needs bare hosts, not full URLs; normalize and de-duplicate.
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
 
-    def running_label(self, targets, config):
+    def running_label(self, targets: list[str], config: configs.NmapConfig) -> str:
         return f"nmap --top-ports {config.top_ports} against {len(targets)} target(s)"
 
     def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
 
-    def execute(self, targets, run_dir, config):
+    def execute(self, targets: list[str], run_dir: Path, config: configs.NmapConfig) -> Path | None:
         xml_path = run_dir / "nmap.xml"
         runner.run_nmap(
             targets,
@@ -174,7 +208,7 @@ class NmapHandler(ToolHandler[configs.NmapConfig]):
         )
         return xml_path
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         services = runner.parse_nmap_xml(output)
         if not services:
             return "no open ports found"
@@ -190,7 +224,13 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
     def parse_config(self, cfg: dict) -> configs.SubfinderConfig:
         return configs.SubfinderConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.SubfinderConfig,
+    ) -> list[str]:
         # subfinder enumerates wildcard scope entries (*.example.com → example.com),
         # regardless of target_source.
         raw = client.scope(program_id)
@@ -203,10 +243,12 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
                     domains.append(stripped)
         return domains
 
-    def running_label(self, targets, config):
+    def running_label(self, targets: list[str], config: configs.SubfinderConfig) -> str:
         return f"subfinder on {len(targets)} domain(s)"
 
-    def execute(self, targets, run_dir, config):
+    def execute(
+        self, targets: list[str], run_dir: Path, config: configs.SubfinderConfig
+    ) -> Path | None:
         sf_output = run_dir / "subfinder.txt"
 
         runner.run_subfinder(targets, sf_output, timeout=config.timeout)
@@ -222,28 +264,13 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
                 fh.write(json.dumps({"host": host, "source": "subfinder"}) + "\n")
         return jsonl_path
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         result = client.import_file(program_id, "httpx", str(output))
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} subdomain(s) as recon targets"
 
     def extract_handoff_targets(self, output: Path) -> list[str]:
-        targets = []
-        try:
-            for line in output.read_text().splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except ValueError:
-                    continue
-                host = obj.get("host")
-                if host:
-                    targets.append(host)
-        except OSError:
-            pass
-        return targets
+        return _extract_jsonl_field(output, "host")
 
 
 class DnsxHandler(ToolHandler[configs.DnsxConfig]):
@@ -252,18 +279,24 @@ class DnsxHandler(ToolHandler[configs.DnsxConfig]):
     def parse_config(self, cfg: dict) -> configs.DnsxConfig:
         return configs.DnsxConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.DnsxConfig,
+    ) -> list[str]:
         raw = _resolve_standard(client, program_id, target_source, config)
         # dnsx resolves bare hostnames, not URLs.
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
 
-    def running_label(self, targets, config):
+    def running_label(self, targets: list[str], config: configs.DnsxConfig) -> str:
         return f"dnsx on {len(targets)} host(s)"
 
     def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
 
-    def execute(self, targets, run_dir, config):
+    def execute(self, targets: list[str], run_dir: Path, config: configs.DnsxConfig) -> Path | None:
         out = run_dir / "dnsx.txt"
         runner.run_dnsx(targets, out, timeout=config.timeout)
         if not out.exists() or out.stat().st_size == 0:
@@ -278,28 +311,13 @@ class DnsxHandler(ToolHandler[configs.DnsxConfig]):
                 fh.write(json.dumps({"host": host, "source": "dnsx"}) + "\n")
         return jsonl_path
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         result = client.import_file(program_id, "httpx", str(output))
         count = result.get("import_record", {}).get("imported_count", "?")
         return f"imported {count} resolvable host(s)"
 
     def extract_handoff_targets(self, output: Path) -> list[str]:
-        targets = []
-        try:
-            for line in output.read_text().splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except ValueError:
-                    continue
-                host = obj.get("host")
-                if host:
-                    targets.append(host)
-        except OSError:
-            pass
-        return targets
+        return _extract_jsonl_field(output, "host")
 
 
 class NaabuHandler(ToolHandler[configs.NaabuConfig]):
@@ -308,22 +326,30 @@ class NaabuHandler(ToolHandler[configs.NaabuConfig]):
     def parse_config(self, cfg: dict) -> configs.NaabuConfig:
         return configs.NaabuConfig.from_dict(cfg)
 
-    def resolve_targets(self, client, program_id, target_source, config):
+    def resolve_targets(
+        self,
+        client: api.VardrMapClient,
+        program_id: str,
+        target_source: str,
+        config: configs.NaabuConfig,
+    ) -> list[str]:
         raw = _resolve_standard(client, program_id, target_source, config)
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in raw if t.strip()))
 
-    def running_label(self, targets, config):
+    def running_label(self, targets: list[str], config: configs.NaabuConfig) -> str:
         return f"naabu --top-ports {config.top_ports} on {len(targets)} host(s)"
 
     def normalize_handoff_targets(self, targets: list[str]) -> list[str]:
         return list(dict.fromkeys(runner.strip_url_to_host(t) for t in targets if t.strip()))
 
-    def execute(self, targets, run_dir, config):
+    def execute(
+        self, targets: list[str], run_dir: Path, config: configs.NaabuConfig
+    ) -> Path | None:
         out = run_dir / "naabu.json"
         runner.run_naabu(targets, out, top_ports=config.top_ports, timeout=config.timeout)
         return out
 
-    def upload(self, client, program_id, output):
+    def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
         services = runner.parse_naabu_json(output)
         if not services:
             return "no open ports found"

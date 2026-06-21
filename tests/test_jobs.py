@@ -352,3 +352,166 @@ def test_run_jobs_missing_tool_marks_failed():
     client.complete_job.assert_called_once_with(
         "job-002", "failed", error="'nuclei' not found on PATH"
     )
+
+
+def test_run_jobs_malformed_job_no_id_prints_message():
+    """Malformed job without an id field is printed, not marked via API."""
+    job = {"program_id": "p", "target_source": "scope"}  # no id and no tool_type
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    client.complete_job.assert_not_called()
+
+
+def test_run_jobs_unknown_tool_type_marks_failed():
+    """A job with an unknown tool_type must be marked failed."""
+    job = {
+        "id": "job-unknown",
+        "program_id": "prog-1",
+        "tool_type": "masscan",
+        "target_source": "scope",
+        "config": {},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    assert client.complete_job.call_args[0][1] == "failed"
+    assert "masscan" in client.complete_job.call_args[1].get("error", "")
+
+
+def test_run_jobs_invalid_config_marks_failed():
+    """Invalid tool config must be caught and the job marked failed before claiming."""
+    job = {
+        "id": "job-badcfg",
+        "program_id": "prog-1",
+        "tool_type": "nuclei",
+        "target_source": "scope",
+        "config": {"severity": "not_a_real_severity"},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    client.claim_job.assert_not_called()
+    assert client.complete_job.call_args[0][1] == "failed"
+
+
+def test_run_jobs_target_resolution_failure_marks_failed():
+    """If resolve_targets raises, the job must be marked failed."""
+    job = {
+        "id": "job-resolv",
+        "program_id": "prog-1",
+        "tool_type": "httpx",
+        "target_source": "scope",
+        "config": {},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.side_effect = RuntimeError("backend error")
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    client.claim_job.assert_not_called()
+    assert client.complete_job.call_args[0][1] == "failed"
+
+
+def test_run_jobs_claim_failure_does_not_mark_failed(tmp_path):
+    """If claim fails (409 race), the job is abandoned silently — not marked failed."""
+    job = {
+        "id": "job-race",
+        "program_id": "prog-1",
+        "tool_type": "httpx",
+        "target_source": "scope",
+        "config": {},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {"in": [{"value": "app.example.com"}], "out": []}
+    client.claim_job.side_effect = RuntimeError("409 Conflict")
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+    ):
+        jobs_cmd.run_jobs(yes=True)  # must not raise
+
+    client.complete_job.assert_not_called()
+
+
+def test_run_jobs_no_output_marks_done(tmp_path):
+    """A job whose tool produces no output file must be marked done (not failed)."""
+    job = {
+        "id": "job-noout",
+        "program_id": "prog-1",
+        "tool_type": "httpx",
+        "target_source": "scope",
+        "config": {},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {"in": [{"value": "app.example.com"}], "out": []}
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.commands.jobs.runner.run_httpx", return_value=0),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    # tool output file doesn't exist → complete_job("done")
+    assert client.complete_job.call_args[0][1] == "done"
+
+
+def test_run_jobs_generic_exception_marks_failed(tmp_path):
+    """An unexpected exception during execution must mark the job failed."""
+    output_file = tmp_path / "httpx.jsonl"
+    output_file.write_text('{"url":"https://example.com"}\n')
+
+    job = {
+        "id": "job-exc",
+        "program_id": "prog-1",
+        "tool_type": "httpx",
+        "target_source": "scope",
+        "config": {},
+    }
+    client = MagicMock()
+    client.pending_jobs.return_value = [job]
+    client.scope.return_value = {"in": [{"value": "app.example.com"}], "out": []}
+
+    with (
+        patch("vardrrunner.commands.jobs.config.require_auth", return_value=("http://api", "key")),
+        patch("vardrrunner.commands.jobs.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.jobs.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.jobs._make_run_dir", return_value=tmp_path),
+        patch("vardrrunner.commands.jobs.runner.run_httpx", side_effect=RuntimeError("disk full")),
+    ):
+        jobs_cmd.run_jobs(yes=True)
+
+    assert client.complete_job.call_args[0][1] == "failed"

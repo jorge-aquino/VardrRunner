@@ -64,3 +64,19 @@ def test_import_nuclei_calls_backend(tmp_path):
         import_file("nuclei", "prog-1", f)
 
     client.import_file.assert_called_once_with("prog-1", "nuclei", str(f))
+
+
+def test_import_api_error_exits(tmp_path):
+    """Network / server errors during import must exit cleanly instead of dumping a traceback."""
+    f = tmp_path / "httpx.jsonl"
+    f.write_text('{"url": "https://example.com"}\n')
+
+    client = MagicMock()
+    client.import_file.side_effect = RuntimeError("backend unavailable")
+
+    with (
+        patch("vardrrunner.commands.imports.config.require_auth", return_value=("https://x", "k")),
+        patch("vardrrunner.commands.imports.api.VardrMapClient", return_value=client),
+        pytest.raises(typer.Exit),
+    ):
+        import_file("httpx", "prog-1", f)

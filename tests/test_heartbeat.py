@@ -133,6 +133,90 @@ def test_send_heartbeat_skips_when_not_authenticated():
         send_heartbeat(quiet=True)  # must not raise
 
 
+def test_send_heartbeat_unauthenticated_verbose_prints_message(capsys):
+    """quiet=False and no auth → skipped message is printed."""
+    with patch(
+        "vardrrunner.commands.heartbeat.config.require_auth",
+        side_effect=RuntimeError("not logged in"),
+    ):
+        from vardrrunner.commands.heartbeat import send_heartbeat
+
+        send_heartbeat(quiet=False)
+
+    assert "skipped" in capsys.readouterr().out.lower()
+
+
+def test_send_heartbeat_verbose_prints_tool_status(capsys):
+    """quiet=False prints per-tool status after a successful heartbeat."""
+    client = MagicMock()
+
+    with (
+        patch(
+            "vardrrunner.commands.heartbeat.config.require_auth", return_value=("http://api", "key")
+        ),
+        patch("vardrrunner.commands.heartbeat.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.heartbeat.runner.tool_available", return_value=True),
+        patch("vardrrunner.commands.heartbeat.runner.tool_version", return_value="v1.0.0"),
+        patch("vardrrunner.commands.heartbeat.socket.gethostname", return_value="host"),
+        patch("vardrrunner.commands.heartbeat.platform.system", return_value="Linux"),
+        patch("vardrrunner.commands.heartbeat.platform.release", return_value="6.5"),
+    ):
+        from vardrrunner.commands.heartbeat import send_heartbeat
+
+        send_heartbeat(quiet=False)
+
+    out = capsys.readouterr().out
+    assert "Heartbeat sent" in out
+    assert "httpx" in out
+
+
+def test_send_heartbeat_verbose_prints_failure(capsys):
+    """quiet=False and API failure → failure message is printed."""
+    client = MagicMock()
+    client.send_heartbeat.side_effect = RuntimeError("backend down")
+
+    with (
+        patch(
+            "vardrrunner.commands.heartbeat.config.require_auth", return_value=("http://api", "key")
+        ),
+        patch("vardrrunner.commands.heartbeat.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.heartbeat.runner.tool_available", return_value=False),
+        patch("vardrrunner.commands.heartbeat.socket.gethostname", return_value="host"),
+        patch("vardrrunner.commands.heartbeat.platform.system", return_value="Linux"),
+        patch("vardrrunner.commands.heartbeat.platform.release", return_value="6.5"),
+    ):
+        from vardrrunner.commands.heartbeat import send_heartbeat
+
+        send_heartbeat(quiet=False)
+
+    assert "failed" in capsys.readouterr().out.lower()
+
+
+def test_send_heartbeat_quiet_failure_logs_warning(caplog):
+    """quiet=True and API failure → warning is emitted to the logging system."""
+    import logging
+
+    client = MagicMock()
+    client.send_heartbeat.side_effect = RuntimeError("backend down")
+
+    with (
+        patch(
+            "vardrrunner.commands.heartbeat.config.require_auth", return_value=("http://api", "key")
+        ),
+        patch("vardrrunner.commands.heartbeat.api.VardrMapClient", return_value=client),
+        patch("vardrrunner.commands.heartbeat.runner.tool_available", return_value=False),
+        patch("vardrrunner.commands.heartbeat.socket.gethostname", return_value="host"),
+        patch("vardrrunner.commands.heartbeat.platform.system", return_value="Linux"),
+        patch("vardrrunner.commands.heartbeat.platform.release", return_value="6.5"),
+        caplog.at_level(logging.WARNING),
+    ):
+        from vardrrunner.commands.heartbeat import send_heartbeat
+
+        send_heartbeat(quiet=True)
+
+    assert any("Heartbeat failed" in r.message for r in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # jobs.run_jobs — heartbeat is sent at startup
 # ---------------------------------------------------------------------------
