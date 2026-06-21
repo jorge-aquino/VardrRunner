@@ -7,6 +7,7 @@ while POST/PATCH never auto-retry (so a dropped response can't double-act).
 
 from unittest.mock import patch
 
+import pytest
 from urllib3.util.retry import Retry
 
 from vardrrunner import __version__
@@ -120,3 +121,158 @@ def test_recon_respects_caller_limit():
 
 def test_recon_page_size_constant():
     assert VardrMapClient.RECON_PAGE_SIZE == 500
+
+
+# ---------------------------------------------------------------------------
+# HTTP methods (get / post / patch) and high-level wrappers
+# ---------------------------------------------------------------------------
+
+
+def _mock_response(json_data, status=200, raise_error=None):
+    from unittest.mock import MagicMock
+
+    r = MagicMock()
+    r.json.return_value = json_data
+    if raise_error:
+        r.raise_for_status.side_effect = raise_error
+    else:
+        r.raise_for_status.return_value = None
+    return r
+
+
+def test_get_returns_json():
+    c = _client()
+    with patch.object(c.session, "get", return_value=_mock_response({"ok": True})):
+        assert c.get("/test") == {"ok": True}
+
+
+def test_get_raises_on_http_error():
+    import requests
+
+    c = _client()
+    with patch.object(
+        c.session, "get", return_value=_mock_response({}, raise_error=requests.HTTPError("404"))
+    ):
+        with pytest.raises(requests.HTTPError):
+            c.get("/bad")
+
+
+def test_post_returns_json():
+    c = _client()
+    with patch.object(c.session, "post", return_value=_mock_response({"created": True})):
+        assert c.post("/test", json={"x": 1}) == {"created": True}
+
+
+def test_post_with_files_passes_them():
+    c = _client()
+    with patch.object(c.session, "post", return_value=_mock_response({})) as mock_post:
+        c.post("/upload", files={"file": b"data"}, data={"tool_type": "httpx"})
+    _, kwargs = mock_post.call_args
+    assert kwargs["files"] == {"file": b"data"}
+    assert kwargs["data"] == {"tool_type": "httpx"}
+
+
+def test_patch_returns_json():
+    c = _client()
+    with patch.object(c.session, "patch", return_value=_mock_response({"status": "done"})):
+        assert c.patch("/jobs/j1", json={"status": "done"}) == {"status": "done"}
+
+
+def test_whoami():
+    c = _client()
+    with patch.object(c, "get", return_value={"username": "jorge"}):
+        assert c.whoami() == {"username": "jorge"}
+
+
+def test_programs_returns_list():
+    c = _client()
+    with patch.object(c, "get", return_value={"programs": [{"id": "p1"}]}):
+        assert c.programs() == [{"id": "p1"}]
+
+
+def test_programs_missing_key_returns_empty():
+    c = _client()
+    with patch.object(c, "get", return_value={}):
+        assert c.programs() == []
+
+
+def test_program():
+    c = _client()
+    with patch.object(c, "get", return_value={"id": "p1"}):
+        assert c.program("p1") == {"id": "p1"}
+
+
+def test_scope():
+    c = _client()
+    scope_data = {"in": [{"value": "*.example.com"}], "out": []}
+    with patch.object(c, "get", return_value={"scope": scope_data}):
+        assert c.scope("p1") == scope_data
+
+
+def test_scope_missing_returns_defaults():
+    c = _client()
+    with patch.object(c, "get", return_value={}):
+        assert c.scope("p1") == {"in": [], "out": []}
+
+
+def test_pending_jobs():
+    c = _client()
+    with patch.object(c, "get", return_value={"jobs": [{"id": "j1"}]}):
+        assert c.pending_jobs() == [{"id": "j1"}]
+
+
+def test_pending_jobs_missing_key():
+    c = _client()
+    with patch.object(c, "get", return_value={}):
+        assert c.pending_jobs() == []
+
+
+def test_claim_job():
+    c = _client()
+    with patch.object(c, "post", return_value={"status": "claimed"}):
+        assert c.claim_job("j1") == {"status": "claimed"}
+
+
+def test_complete_job_done():
+    c = _client()
+    with patch.object(
+        c.session, "patch", return_value=_mock_response({"status": "done"})
+    ) as mock_patch:
+        c.complete_job("j1", "done")
+    _, kwargs = mock_patch.call_args
+    assert kwargs["json"] == {"status": "done"}
+
+
+def test_complete_job_with_error_message():
+    c = _client()
+    with patch.object(c.session, "patch", return_value=_mock_response({})) as mock_patch:
+        c.complete_job("j1", "failed", error="boom")
+    _, kwargs = mock_patch.call_args
+    assert kwargs["json"]["error_message"] == "boom"
+
+
+def test_send_heartbeat():
+    c = _client()
+    with patch.object(c, "post", return_value={"ok": True}):
+        assert c.send_heartbeat({"hostname": "box"}) == {"ok": True}
+
+
+def test_post_event():
+    c = _client()
+    with patch.object(c, "post", return_value={"id": "e1"}):
+        assert c.post_event("j1", "started", "running") == {"id": "e1"}
+
+
+def test_create_services():
+    c = _client()
+    with patch.object(c, "post", return_value={"created": 2}):
+        assert c.create_services("p1", []) == {"created": 2}
+
+
+def test_import_file(tmp_path):
+    out = tmp_path / "httpx.jsonl"
+    out.write_text('{"url":"https://a.com"}\n')
+    c = _client()
+    with patch.object(c, "post", return_value={"import_record": {"imported_count": 1}}):
+        result = c.import_file("p1", "httpx", str(out))
+    assert result["import_record"]["imported_count"] == 1

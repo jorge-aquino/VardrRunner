@@ -12,6 +12,8 @@ getters/setters return None/False instead of raising, so callers can fall back t
 environment variables or the legacy config file.
 """
 
+import logging
+
 SERVICE = "vardrrunner"
 
 
@@ -22,7 +24,8 @@ def available() -> bool:
         import keyring.backends.fail
 
         return not isinstance(keyring.get_keyring(), keyring.backends.fail.Keyring)
-    except Exception:
+    except Exception as e:
+        logging.debug("keychain availability check failed: %s", e)
         return False
 
 
@@ -32,7 +35,8 @@ def get_key(api_url: str) -> str | None:
         import keyring
 
         return keyring.get_password(SERVICE, api_url)
-    except Exception:
+    except Exception as e:
+        logging.debug("keychain get_key failed for %s: %s", api_url, e)
         return None
 
 
@@ -43,7 +47,8 @@ def set_key(api_url: str, api_key: str) -> bool:
 
         keyring.set_password(SERVICE, api_url, api_key)
         return True
-    except Exception:
+    except Exception as e:
+        logging.debug("keychain set_key failed for %s: %s", api_url, e)
         return False
 
 
@@ -54,5 +59,6 @@ def delete_key(api_url: str) -> bool:
 
         keyring.delete_password(SERVICE, api_url)
         return True
-    except Exception:
+    except Exception as e:
+        logging.debug("keychain delete_key failed for %s: %s", api_url, e)
         return False

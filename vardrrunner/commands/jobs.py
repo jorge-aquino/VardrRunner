@@ -7,6 +7,8 @@ uniform *lifecycle* (availability → config → targets → claim → run → u
 done/fail); the per-tool specifics live in ``vardrrunner.handlers``.
 """
 
+import logging
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -49,11 +51,11 @@ def list_jobs() -> None:
 
 
 def _emit(client: api.VardrMapClient, job_id: str, kind: str, text: str = "") -> None:
-    """Post a job event; swallow errors so a failed event never kills the job loop."""
+    """Post a job event; log failures so operators can diagnose stuck jobs."""
     try:
         client.post_event(job_id, kind, text)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning("Failed to post event %r for job %s: %s", kind, job_id, e)
 
 
 def _fail_job(client: api.VardrMapClient, con: Console, job_id: str, error: str) -> None:

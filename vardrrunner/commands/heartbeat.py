@@ -4,6 +4,7 @@ and tool availability. Called explicitly via `vardrrunner heartbeat` and
 automatically at the start of `vardrrunner jobs run`.
 """
 
+import logging
 import platform
 import socket
 
@@ -51,3 +52,5 @@ def send_heartbeat(quiet: bool = False) -> None:
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]Heartbeat failed:[/yellow] {e}")
+        else:
+            logging.warning("Heartbeat failed: %s", e)
