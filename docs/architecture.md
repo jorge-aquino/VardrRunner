@@ -29,13 +29,13 @@ either direction.
 | `vardrrunner/configs.py` | Typed, validated tool configs (`HttpxConfig`, `NucleiConfig`, `NmapConfig`, `SubfinderConfig`). Raw backend dicts are parsed into frozen dataclasses up front; invalid values raise `ConfigError` and fail the job fast. |
 | `vardrrunner/targets.py` | Target resolution (scope/recon/inline/file → list of targets). Shared by the `run` commands and the handlers — lives here to avoid an import cycle. |
 | `vardrrunner/handlers.py` | One `ToolHandler` per job type (`parse_config`/`resolve_targets`/`execute`/`upload`) plus the `REGISTRY`. Adding a tool is a one-file change here (see ADR 0002). |
-| `vardrrunner/pipelines.py` | Named recon pipelines — ordered lists of `Stage(tool, source)`. Stages reference handlers; the next stage pulls the prior stage's uploaded results via the recon source. |
+| `vardrrunner/pipelines.py` | Named recon pipelines — ordered lists of `Stage(tool, source)`. Stages reference handlers; each stage writes its discovered targets to a local handoff file, which the next stage reads directly instead of querying the backend recon store. |
 | `vardrrunner/runner.py` | Subprocess execution, stdout/stderr capture, timestamped run directories under `~/.vardrmap/runs`. |
 | `vardrrunner/commands/auth.py` | `login` — prompt for and persist backend URL + API key. |
 | `vardrrunner/commands/run.py` | `run httpx|subfinder|nuclei|nmap|dnsx|naabu` — execute one tool, upload results (shares the typed-config + handler path). |
-| `vardrrunner/commands/imports.py` | `import nuclei|httpx|ffuf` — push an existing output file. |
+| `vardrrunner/commands/imports.py` | `import nuclei|httpx` — push an existing output file. |
 | `vardrrunner/commands/jobs.py` | `jobs list|run` — owns the uniform job *lifecycle* (`_execute_one`): capability → config → targets → claim → events → upload → done/fail, delegating specifics to a `handlers` registry entry. |
-| `vardrrunner/commands/pipeline.py` | `pipeline list|run` — runs a `pipelines` chain stage by stage (resolve → execute → upload), each stage handing off to the next via the recon store. |
+| `vardrrunner/commands/pipeline.py` | `pipeline list|run` — runs a `pipelines` chain stage by stage (resolve → execute → upload), each stage writing a local handoff file so the next stage reads from it directly rather than the backend recon store. |
 | `vardrrunner/commands/daemon.py` | `daemon start|stop|status` — continuous worker (poll + heartbeat) with PID file and graceful shutdown. |
 | `vardrrunner/commands/heartbeat.py` | `heartbeat` — send a single heartbeat. |
 | `vardrrunner/commands/status.py` | `status` — local config, version, detected tool availability (quick glance). |
