@@ -13,16 +13,240 @@ the next stage falls back to the backend recon store as before — preserving th
 original behaviour for terminal tools and for the direct `run` commands.
 """
 
+import time
+import types
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
+from rich import box
 from rich.console import Console
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.table import Table
+from rich.text import Text
 
 from vardrrunner import api, config, configs, handlers, pipelines, runner
 from vardrrunner.commands.run import MAX_TARGETS_DEFAULT, _make_run_dir
 
 console = Console()
+
+
+# ---------------------------------------------------------------------------
+# Pipeline TUI
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _StageState:
+    tool: str
+    status: str = "pending"  # pending | running | done | failed | no_targets | aborted
+    targets: int = 0
+    summary: str = ""
+    elapsed: float = 0.0
+
+
+class _PipelineTUI:
+    """Rich Live table that updates one row per stage in place."""
+
+    _ICONS: dict[str, Text] = {
+        "pending": Text("○", style="dim"),
+        "done": Text("✓", style="bold green"),
+        "failed": Text("✗", style="bold red"),
+        "no_targets": Text("⊘", style="yellow"),
+        "aborted": Text("—", style="dim"),
+    }
+
+    def __init__(self, stages: list[pipelines.Stage]) -> None:
+        self._rows = [_StageState(tool=s.tool) for s in stages]
+        self._spinner = Spinner("dots")
+        self._live = Live(self._render(), refresh_per_second=8, auto_refresh=True)
+
+    def __enter__(self) -> "_PipelineTUI":
+        self._live.__enter__()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
+        self._live.__exit__(exc_type, exc_val, exc_tb)
+
+    def start(self, i: int) -> None:
+        self._rows[i].status = "running"
+        self._live.update(self._render())
+
+    def finish(
+        self,
+        i: int,
+        *,
+        status: str,
+        targets: int = 0,
+        summary: str = "",
+        elapsed: float = 0.0,
+    ) -> None:
+        r = self._rows[i]
+        r.status = status
+        r.targets = targets
+        r.summary = summary
+        r.elapsed = elapsed
+        self._live.update(self._render())
+
+    def _render(self) -> Table:
+        table = Table(box=box.SIMPLE_HEAD, show_footer=False, padding=(0, 1), expand=False)
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Tool", style="bold", min_width=10)
+        table.add_column("", width=2)
+        table.add_column("Targets", justify="right", min_width=7)
+        table.add_column("Results", min_width=30)
+        table.add_column("Time", justify="right", style="dim", min_width=5)
+
+        for idx, row in enumerate(self._rows, 1):
+            icon: Text | Spinner = (
+                self._spinner
+                if row.status == "running"
+                else self._ICONS.get(row.status, Text(row.status))
+            )
+            targets_cell = str(row.targets) if row.targets else "—"
+            time_cell = f"{row.elapsed:.0f}s" if row.elapsed else ""
+
+            if row.status == "failed":
+                summary_cell: Text = Text(row.summary or "failed", style="red")
+            elif row.status == "no_targets":
+                summary_cell = Text("no targets", style="yellow")
+            elif row.status == "aborted":
+                summary_cell = Text("aborted", style="dim")
+            else:
+                summary_cell = Text(row.summary)
+
+            table.add_row(str(idx), row.tool, icon, targets_cell, summary_cell, time_cell)
+
+        return table
+
+
+# ---------------------------------------------------------------------------
+# Stage execution
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _StageResult:
+    status: str  # done | failed | no_targets | aborted
+    should_continue: bool
+    targets: int = 0
+    summary: str = ""
+    elapsed: float = 0.0
+    handoff: Path | None = None
+
+
+def _run_stage(
+    client: api.VardrMapClient,
+    stage: pipelines.Stage,
+    program_id: str,
+    severity: str | None,
+    continue_on_error: bool,
+    handoff_path: Path | None = None,
+    max_targets: int = MAX_TARGETS_DEFAULT,
+) -> _StageResult:
+    """Run one pipeline stage and return a structured result. Never prints."""
+    t0 = time.monotonic()
+    handler = handlers.REGISTRY[stage.tool]
+    cfg = {"severity": severity} if (stage.tool == "nuclei" and severity) else {}
+    config_obj = handler.parse_config(cfg)
+
+    # Local handoff takes priority over the backend recon store so prior pipeline
+    # runs can't contaminate this one with stale data.
+    if handoff_path is not None and stage.source == "recon" and handoff_path.exists():
+        raw = [t for t in handoff_path.read_text().splitlines() if t.strip()]
+        targets = handler.normalize_handoff_targets(raw)
+    else:
+        try:
+            targets = handler.resolve_targets(client, program_id, stage.source, config_obj)
+        except Exception as e:
+            return _StageResult(
+                status="failed",
+                should_continue=continue_on_error,
+                summary=f"target resolution: {e}",
+                elapsed=time.monotonic() - t0,
+            )
+
+    if not targets:
+        return _StageResult(
+            status="no_targets",
+            should_continue=False,
+            elapsed=time.monotonic() - t0,
+        )
+
+    if max_targets > 0 and len(targets) > max_targets:
+        return _StageResult(
+            status="aborted",
+            should_continue=continue_on_error,
+            targets=len(targets),
+            summary=f"{len(targets)} targets exceeds --max-targets {max_targets}",
+            elapsed=time.monotonic() - t0,
+        )
+
+    run_dir = _make_run_dir()
+    try:
+        output = handler.execute(targets, run_dir, config_obj)
+    except runner.ToolTimeout as e:
+        return _StageResult(
+            status="failed",
+            should_continue=continue_on_error,
+            targets=len(targets),
+            summary=str(e),
+            elapsed=time.monotonic() - t0,
+        )
+    except Exception as e:
+        return _StageResult(
+            status="failed",
+            should_continue=continue_on_error,
+            targets=len(targets),
+            summary=str(e),
+            elapsed=time.monotonic() - t0,
+        )
+
+    if output is None or not output.exists() or output.stat().st_size == 0:
+        return _StageResult(
+            status="no_targets",
+            should_continue=False,
+            targets=len(targets),
+            elapsed=time.monotonic() - t0,
+        )
+
+    try:
+        summary = handler.upload(client, program_id, output)
+    except Exception as e:
+        return _StageResult(
+            status="failed",
+            should_continue=continue_on_error,
+            targets=len(targets),
+            summary=f"upload: {e}",
+            elapsed=time.monotonic() - t0,
+        )
+
+    extracted = handler.extract_handoff_targets(output)
+    next_handoff: Path | None = None
+    if extracted:
+        next_handoff = run_dir / "handoff.txt"
+        next_handoff.write_text("\n".join(extracted))
+
+    return _StageResult(
+        status="done",
+        should_continue=True,
+        targets=len(targets),
+        summary=summary,
+        elapsed=time.monotonic() - t0,
+        handoff=next_handoff,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
 
 def list_pipelines() -> None:
@@ -73,93 +297,44 @@ def run_pipeline(
         console.print("[dim]Aborted.[/dim]")
         raise typer.Exit(0)
 
-    total = len(stages)
+    t_total = time.monotonic()
+    stopped_at: int | None = None
     handoff_path: Path | None = None
-    for i, stage in enumerate(stages, 1):
-        console.rule(f"Stage {i}/{total} — {stage.tool} (from {stage.source})")
-        should_continue, handoff_path = _run_stage(
-            client, stage, program_id, severity, continue_on_error, handoff_path, max_targets
-        )
-        if not should_continue:
-            break
 
-    console.print(f"\n[green]Pipeline complete.[/green] Run ID: [dim]{run_id}[/dim]")
+    with _PipelineTUI(stages) as tui:
+        for i, stage in enumerate(stages):
+            tui.start(i)
+            result = _run_stage(
+                client,
+                stage,
+                program_id,
+                severity,
+                continue_on_error,
+                handoff_path,
+                max_targets,
+            )
+            tui.finish(
+                i,
+                status=result.status,
+                targets=result.targets,
+                summary=result.summary,
+                elapsed=result.elapsed,
+            )
+            handoff_path = result.handoff
+            if not result.should_continue:
+                stopped_at = i
+                for j in range(i + 1, len(stages)):
+                    tui.finish(j, status="aborted")
+                break
 
-
-def _run_stage(
-    client: api.VardrMapClient,
-    stage: pipelines.Stage,
-    program_id: str,
-    severity: str | None,
-    continue_on_error: bool,
-    handoff_path: Path | None = None,
-    max_targets: int = MAX_TARGETS_DEFAULT,
-) -> tuple[bool, Path | None]:
-    """Run one pipeline stage. Returns (should_continue, handoff_file_for_next_stage)."""
-    handler = handlers.REGISTRY[stage.tool]
-    cfg = {"severity": severity} if (stage.tool == "nuclei" and severity) else {}
-    config_obj = handler.parse_config(cfg)
-
-    # Target resolution: prefer the previous stage's local handoff over the shared
-    # backend recon store so stale data from earlier pipeline runs can't contaminate
-    # this one. Fall back to backend resolution when no handoff is available.
-    if handoff_path is not None and stage.source == "recon" and handoff_path.exists():
-        raw = [t for t in handoff_path.read_text().splitlines() if t.strip()]
-        targets = handler.normalize_handoff_targets(raw)
+    total_elapsed = time.monotonic() - t_total
+    if stopped_at is None:
         console.print(
-            f"[dim]Using {len(targets)} target(s) handed off from the previous stage.[/dim]"
+            f"\n[green]Pipeline complete[/green] in {total_elapsed:.0f}s.  Run [dim]{run_id}[/dim]"
         )
     else:
-        try:
-            targets = handler.resolve_targets(client, program_id, stage.source, config_obj)
-        except Exception as e:
-            console.print(f"[red]Target resolution failed:[/red] {e}")
-            return continue_on_error, None
-
-    if not targets:
-        console.print("[yellow]No targets for this stage — stopping pipeline.[/yellow]")
-        return False, None
-
-    if max_targets > 0 and len(targets) > max_targets:
         console.print(
-            f"[red]Aborted:[/red] {len(targets)} targets exceeds --max-targets {max_targets}. "
-            f"Pass [bold]--max-targets 0[/bold] to disable, or raise the limit explicitly."
+            f"\n[yellow]Pipeline stopped[/yellow] at stage {stopped_at + 1} "
+            f"({stages[stopped_at].tool}) in {total_elapsed:.0f}s.  "
+            f"Run [dim]{run_id}[/dim]"
         )
-        return continue_on_error, None
-
-    console.print(
-        f"{len(targets)} target(s); running {handler.running_label(targets, config_obj)}…"
-    )
-    run_dir = _make_run_dir()
-    try:
-        output = handler.execute(targets, run_dir, config_obj)
-    except runner.ToolTimeout as e:
-        console.print(f"[red]{e}[/red]")
-        return continue_on_error, None
-    except Exception as e:
-        console.print(f"[red]Execution failed:[/red] {e}")
-        return continue_on_error, None
-
-    if output is None or not output.exists() or output.stat().st_size == 0:
-        console.print("[yellow]No output produced — stopping pipeline.[/yellow]")
-        return False, None
-
-    try:
-        summary = handler.upload(client, program_id, output)
-    except Exception as e:
-        console.print(f"[red]Upload failed:[/red] {e}")
-        return continue_on_error, None
-
-    console.print(f"[green]Stage done.[/green] {summary}")
-
-    # Extract targets from this stage's output and write a handoff file for the
-    # next stage. Terminal tools (nuclei, nmap, naabu) return [] so no handoff is
-    # written and the next stage falls back to the backend recon store.
-    extracted = handler.extract_handoff_targets(output)
-    if extracted:
-        next_handoff = run_dir / "handoff.txt"
-        next_handoff.write_text("\n".join(extracted))
-        console.print(f"[dim]→ {len(extracted)} target(s) queued for next stage.[/dim]")
-        return True, next_handoff
-
-    return True, None
