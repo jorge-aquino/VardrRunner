@@ -14,7 +14,7 @@ Local automation runner for VardrSec. Python CLI (Typer + Rich) that runs securi
   - `pipelines.py` — named recon pipelines (ordered `Stage(tool, source)` chains)
   - `runner.py` — subprocess execution (timeouts, allowlist), output capture, run directory management
   - `commands/` — one module per group: `auth`, `daemon`, `doctor`, `heartbeat`, `imports`, `jobs`, `pipeline`, `programs`, `run`, `status`
-- `tests/` — pytest suite (222 tests); all subprocess and HTTP calls mocked — no network or real tool calls
+- `tests/` — pytest suite (384 tests, 95% coverage); all subprocess and HTTP calls mocked — no network or real tool calls
 - `docs/` — architecture, development setup, CLI reference, ADRs
 - `changelog/` — per-version notes; `CHANGELOG.md` at root is the index
 - `.github/workflows/` — CI (lint + tests on every push)
@@ -51,7 +51,7 @@ Docs-only, test-only, pure-refactor commits may note "No user-facing docs change
 ruff check vardrrunner tests
 ruff format --check vardrrunner tests
 mypy vardrrunner
-pytest tests --cov=vardrrunner --cov-fail-under=60
+pytest tests --cov=vardrrunner --cov-fail-under=95
 ```
 Autofix: `ruff check --fix vardrrunner tests && ruff format vardrrunner tests`
 
@@ -70,7 +70,7 @@ vardrrunner daemon start
 - `logout` — remove credentials, keep URL
 - `run httpx|subfinder|nuclei|nmap` — run tool locally, upload results
 - `pipeline list|run <name>` — chain tools (subfinder → httpx → nuclei)
-- `import nuclei|httpx|ffuf` — import existing output file
+- `import nuclei|httpx` — import existing output file
 - `jobs list|run` — inspect and execute backend job queue (one-shot)
 - `daemon start|stop|status` — long-running background worker (poll + heartbeat)
 - `heartbeat` — send single heartbeat

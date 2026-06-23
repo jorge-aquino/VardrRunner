@@ -97,10 +97,9 @@ hung tool is killed rather than blocking.
 ```bash
 vardrrunner import nuclei --program <id> --file <path>
 vardrrunner import httpx  --program <id> --file <path>
-vardrrunner import ffuf   --program <id> --file <path>
 ```
-Pushes results from a tool output file (JSON/JSONL) you already have, without running the
-tool. `-f` is shorthand for `--file`.
+Pushes results from a tool output file (JSONL) you already have, without running the
+tool. `-f` is shorthand for `--file`. Supported tools: `httpx`, `nuclei`.
 
 ---
 
@@ -109,8 +108,10 @@ tool. `-f` is shorthand for `--file`.
 vardrrunner pipeline list                              # show available pipelines
 vardrrunner pipeline run recon --program <id> [options]
 ```
-A pipeline runs an ordered chain of tools, each uploading its results so the next stage
-pulls them from the recon store. Built-in pipelines:
+A pipeline runs an ordered chain of tools. Each stage writes its discovered targets to a
+local handoff file; the next stage reads from that file instead of pulling from the backend
+recon store. This keeps the pipeline fast and consistent even when the backend is slow.
+Built-in pipelines:
 
 | Name | Chain |
 |------|-------|

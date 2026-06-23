@@ -22,7 +22,7 @@ results, and heartbeats so the backend always knows which machines are online.
   each capturing output into a timestamped run directory, every run bounded by a timeout
 - **Recon pipelines** — chain tools in one command: `recon` (subfinder → httpx → nuclei),
   `deep` (adds dnsx resolution), `ports` (subfinder → dnsx → naabu), `quick`
-- **Importers** — pull existing `nuclei` / `httpx` / `ffuf` output files into the backend
+- **Importers** — pull existing `nuclei` / `httpx` output files into the backend
 - **Real heartbeat** — reports hostname, version, OS, and per-tool availability so the
   backend's Bridge shows live machine status
 - **Live job events** — emits `started → targets_resolved → running → uploaded → done/failed`
@@ -115,9 +115,9 @@ pip install -e ".[dev]"   # editable install + dev tools (pytest, ruff, mypy)
 ruff check vardrrunner tests           # lint
 ruff format --check vardrrunner tests  # formatting
 mypy vardrrunner                       # type check
-pytest tests              # 222 tests; all subprocess + HTTP calls are mocked
+pytest tests              # 384 tests; all subprocess + HTTP calls are mocked
 ```
-CI runs lint, format, types, and tests with coverage on Python 3.10–3.12 for every push.
+CI runs lint, types, bandit security scan, and tests at 95% coverage on Python 3.10–3.12 for every push.
 Contributions follow the **Engineering Charter** in [CLAUDE.md](CLAUDE.md): clean code,
 tests in the same commit, docs updated, and the suite always green.
 
