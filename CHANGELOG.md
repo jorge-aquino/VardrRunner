@@ -7,6 +7,19 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-06-23
+
+### Added
+- **Live TUI for `pipeline run`.** Each stage is now a live-updating table row
+  (Rich `Live` + `Table`) with a spinner while running and final status icons
+  (✓ done, ✗ failed, ⊘ no targets, — aborted) plus target count, result summary,
+  and elapsed time per stage. Remaining stages are marked aborted immediately when
+  a stage stops the pipeline.
+
+### Changed
+- `_run_stage` now returns a structured `_StageResult` dataclass instead of
+  printing directly, keeping all display logic in `_PipelineTUI`.
+
 ## [0.22.2] — 2026-06-20
 
 ### Changed
