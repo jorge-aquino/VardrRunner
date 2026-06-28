@@ -13,6 +13,7 @@ the next stage falls back to the backend recon store as before — preserving th
 original behaviour for terminal tools and for the direct `run` commands.
 """
 
+import json
 import time
 import types
 import uuid
@@ -192,14 +193,6 @@ def _run_stage(
     run_dir = _make_run_dir()
     try:
         output = handler.execute(targets, run_dir, config_obj)
-    except runner.ToolTimeout as e:
-        return _StageResult(
-            status="failed",
-            should_continue=continue_on_error,
-            targets=len(targets),
-            summary=str(e),
-            elapsed=time.monotonic() - t0,
-        )
     except Exception as e:
         return _StageResult(
             status="failed",
@@ -264,6 +257,8 @@ def run_pipeline(
     yes: bool = False,
     continue_on_error: bool = False,
     max_targets: int = MAX_TARGETS_DEFAULT,
+    dry_run: bool = False,
+    as_json: bool = False,
 ) -> None:
     """Run every stage of a pipeline in order against a program."""
     stages = pipelines.PIPELINES.get(name)
@@ -289,10 +284,16 @@ def run_pipeline(
 
     run_id = uuid.uuid4().hex[:8]
     chain = " → ".join(s.tool for s in stages)
-    console.print(
-        f"\n[bold]Pipeline '{name}'[/bold]: {chain}  "
-        f"(program {program_id}  run [dim]{run_id}[/dim])"
-    )
+    if not as_json:
+        console.print(
+            f"\n[bold]Pipeline '{name}'[/bold]: {chain}  "
+            f"(program {program_id}  run [dim]{run_id}[/dim])"
+        )
+
+    if dry_run:
+        _run_pipeline_dry(client, stages, program_id, severity, max_targets)
+        return
+
     if not yes and not typer.confirm("Run this pipeline?", default=False):
         console.print("[dim]Aborted.[/dim]")
         raise typer.Exit(0)
@@ -300,18 +301,61 @@ def run_pipeline(
     t_total = time.monotonic()
     stopped_at: int | None = None
     handoff_path: Path | None = None
+    stage_results: list[dict] = []
+
+    if as_json:
+        # JSON mode: no TUI — stdout must be pure JSON for machine consumers.
+        for i, stage in enumerate(stages):
+            result = _run_stage(
+                client, stage, program_id, severity, continue_on_error, handoff_path, max_targets
+            )
+            stage_results.append(
+                {
+                    "stage": i + 1,
+                    "tool": stage.tool,
+                    "source": stage.source,
+                    "status": result.status,
+                    "targets": result.targets,
+                    "summary": result.summary,
+                    "elapsed": round(result.elapsed, 2),
+                }
+            )
+            handoff_path = result.handoff
+            if not result.should_continue:
+                stopped_at = i
+                for j in range(i + 1, len(stages)):
+                    stage_results.append(
+                        {
+                            "stage": j + 1,
+                            "tool": stages[j].tool,
+                            "source": stages[j].source,
+                            "status": "aborted",
+                            "targets": 0,
+                            "summary": "",
+                            "elapsed": 0.0,
+                        }
+                    )
+                break
+        total_elapsed = time.monotonic() - t_total
+        console.print_json(
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "pipeline": name,
+                    "program_id": program_id,
+                    "success": stopped_at is None,
+                    "total_elapsed": round(total_elapsed, 2),
+                    "stages": stage_results,
+                }
+            )
+        )
+        return
 
     with _PipelineTUI(stages) as tui:
         for i, stage in enumerate(stages):
             tui.start(i)
             result = _run_stage(
-                client,
-                stage,
-                program_id,
-                severity,
-                continue_on_error,
-                handoff_path,
-                max_targets,
+                client, stage, program_id, severity, continue_on_error, handoff_path, max_targets
             )
             tui.finish(
                 i,
@@ -338,3 +382,36 @@ def run_pipeline(
             f"({stages[stopped_at].tool}) in {total_elapsed:.0f}s.  "
             f"Run [dim]{run_id}[/dim]"
         )
+
+
+def _run_pipeline_dry(
+    client: api.VardrMapClient,
+    stages: list[pipelines.Stage],
+    program_id: str,
+    severity: str | None,
+    max_targets: int,
+) -> None:
+    """Resolve first-stage targets and print what would run without executing."""
+    console.print("[dim]Dry run — no tools will execute.[/dim]\n")
+    first = stages[0]
+    handler = handlers.REGISTRY[first.tool]
+    cfg_dict = {"severity": severity} if (first.tool == "nuclei" and severity) else {}
+    config_obj = handler.parse_config(cfg_dict)
+    try:
+        targets = handler.resolve_targets(client, program_id, first.source, config_obj)
+    except Exception as e:
+        console.print(f"[red]Could not resolve stage-1 targets:[/red] {e}")
+        raise typer.Exit(1) from e
+
+    n = len(targets)
+    cap = (
+        f"  [yellow](exceeds --max-targets {max_targets})[/yellow]"
+        if max_targets > 0 and n > max_targets
+        else ""
+    )
+    console.print(f"  [bold]Stage 1[/bold] {first.tool}({first.source}): {n} target(s){cap}")
+    for i, stage in enumerate(stages[1:], 2):
+        console.print(
+            f"  [bold]Stage {i}[/bold] {stage.tool}({stage.source}): targets from stage {i - 1}"
+        )
+    console.print("\n[dim]Pass --yes (and omit --dry-run) to execute.[/dim]")

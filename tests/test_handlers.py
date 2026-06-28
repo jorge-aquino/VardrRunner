@@ -1,5 +1,6 @@
 """Unit tests for the tool handlers and registry."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -241,3 +242,38 @@ def test_dnsx_normalize_strips_urls_to_hosts():
 def test_naabu_normalize_strips_urls_to_hosts():
     targets = ["https://host.example.com:443/path"]
     assert handlers.NaabuHandler().normalize_handoff_targets(targets) == ["host.example.com"]
+
+
+# ---------------------------------------------------------------------------
+# _extract_jsonl_field — error paths
+# ---------------------------------------------------------------------------
+
+
+def test_extract_jsonl_field_oserror_logs_warning(tmp_path, caplog):
+    import logging
+
+    missing = tmp_path / "does_not_exist.jsonl"
+    with caplog.at_level(logging.WARNING, logger="vardrrunner.handlers"):
+        result = handlers._extract_jsonl_field(missing, "url")
+    assert result == []
+    assert any("Failed to read tool output" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# _write_host_import_jsonl
+# ---------------------------------------------------------------------------
+
+
+def test_write_host_import_jsonl_creates_file(tmp_path):
+    out = tmp_path / "out.jsonl"
+    handlers._write_host_import_jsonl(["a.example.com", "b.example.com"], "subfinder", out)
+    lines = out.read_text().splitlines()
+    assert len(lines) == 2
+    obj = json.loads(lines[0])
+    assert obj == {"host": "a.example.com", "source": "subfinder"}
+
+
+def test_write_host_import_jsonl_empty_list(tmp_path):
+    out = tmp_path / "out.jsonl"
+    handlers._write_host_import_jsonl([], "dnsx", out)
+    assert out.read_text() == ""

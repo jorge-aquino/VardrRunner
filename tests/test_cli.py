@@ -233,3 +233,15 @@ class TestPipelineCommands:
             invoke("pipeline", "run", "recon", "--program", "p1", "--severity", "high", "--yes")
         _, kwargs = mock.call_args
         assert kwargs.get("severity") == "high"
+
+    def test_pipeline_run_dry_run_flag(self):
+        with patch("vardrrunner.commands.pipeline.run_pipeline") as mock:
+            invoke("pipeline", "run", "quick", "--program", "p1", "--dry-run", "--yes")
+        _, kwargs = mock.call_args
+        assert kwargs.get("dry_run") is True
+
+    def test_pipeline_run_json_flag(self):
+        with patch("vardrrunner.commands.pipeline.run_pipeline") as mock:
+            invoke("pipeline", "run", "quick", "--program", "p1", "--json", "--yes")
+        _, kwargs = mock.call_args
+        assert kwargs.get("as_json") is True

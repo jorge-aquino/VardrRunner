@@ -352,3 +352,83 @@ def test_tui_shows_spinner_while_running():
     tui.start(0)
     table = tui._render()
     assert table.row_count == 1
+
+
+# ---------------------------------------------------------------------------
+# run_pipeline — --dry-run
+# ---------------------------------------------------------------------------
+
+
+def test_run_pipeline_dry_run_does_not_execute(capsys):
+    client = MagicMock()
+    client.scope.return_value = {"in": [{"value": "*.example.com", "kind": "domain"}], "out": []}
+
+    with _auth(), _client(client), _tools_available():
+        with patch("vardrrunner.commands.pipeline._run_stage") as mock_stage:
+            run_pipeline("quick", "prog-1", yes=True, dry_run=True)
+    mock_stage.assert_not_called()
+    out = capsys.readouterr().out
+    assert "dry run" in out.lower()
+
+
+def test_run_pipeline_dry_run_shows_target_count(capsys):
+    client = MagicMock()
+    client.scope.return_value = {
+        "in": [{"value": "*.a.com"}, {"value": "*.b.com"}],
+        "out": [],
+    }
+
+    with _auth(), _client(client), _tools_available():
+        run_pipeline("quick", "prog-1", yes=True, dry_run=True)
+
+    out = capsys.readouterr().out
+    assert "2" in out  # 2 wildcard domains resolved for subfinder
+
+
+def test_run_pipeline_dry_run_resolution_error_exits():
+    client = MagicMock()
+    client.scope.side_effect = RuntimeError("backend down")
+
+    with _auth(), _client(client), _tools_available():
+        with pytest.raises(typer.Exit):
+            run_pipeline("quick", "prog-1", yes=True, dry_run=True)
+
+
+# ---------------------------------------------------------------------------
+# run_pipeline — --json
+# ---------------------------------------------------------------------------
+
+
+def test_run_pipeline_json_output(capsys):
+    import json as _json
+
+    def fake_stage(*a, **kw):
+        return _StageResult(
+            status="done", should_continue=True, targets=10, summary="imported 10", elapsed=1.0
+        )
+
+    with _auth(), _client(), _tools_available():
+        with patch("vardrrunner.commands.pipeline._run_stage", side_effect=fake_stage):
+            run_pipeline("quick", "prog-1", yes=True, as_json=True)
+
+    out = capsys.readouterr().out
+    payload = _json.loads(out)
+    assert payload["pipeline"] == "quick"
+    assert payload["success"] is True
+    assert len(payload["stages"]) == 2
+    assert payload["stages"][0]["status"] == "done"
+
+
+def test_run_pipeline_json_stopped_pipeline(capsys):
+    import json as _json
+
+    def fake_stage(*a, **kw):
+        return _StageResult(status="no_targets", should_continue=False, elapsed=0.1)
+
+    with _auth(), _client(), _tools_available():
+        with patch("vardrrunner.commands.pipeline._run_stage", side_effect=fake_stage):
+            run_pipeline("quick", "prog-1", yes=True, as_json=True)
+
+    payload = _json.loads(capsys.readouterr().out)
+    assert payload["success"] is False
+    assert any(s["status"] == "aborted" for s in payload["stages"])

@@ -379,6 +379,10 @@ def pipeline_run(
     continue_on_error: bool = typer.Option(
         False, "--continue-on-error", help="Keep going if a stage fails"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Resolve first-stage targets and print the plan without executing"
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit a machine-readable JSON result"),
 ):
     """Run every stage of a pipeline in order against a program."""
     pipeline_cmd.run_pipeline(
@@ -387,4 +391,6 @@ def pipeline_run(
         severity=severity,
         yes=yes,
         continue_on_error=continue_on_error,
+        dry_run=dry_run,
+        as_json=as_json,
     )
