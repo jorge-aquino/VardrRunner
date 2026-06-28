@@ -322,6 +322,16 @@ class TestStart:
         _run_start(pid_file, stop_after=2, execute=MagicMock(side_effect=flaky_execute))
         assert call_count["n"] == 2  # tried twice despite first failure
 
+    def test_poll_backoff_message_mentions_retry(self, pid_file, capsys):
+        """The backoff message should tell operators when the next retry will happen."""
+
+        def always_fail(*args, **kwargs):
+            raise RuntimeError("backend down")
+
+        _run_start(pid_file, stop_after=1, execute=MagicMock(side_effect=always_fail))
+        out = capsys.readouterr().out
+        assert "retry in" in out
+
     def test_pid_file_removal_stops_loop(self, pid_file):
         """Deleting the PID file (what `stop` does) ends the loop gracefully."""
 
@@ -401,6 +411,34 @@ class TestRotatingLogFile:
 
         content = log.read_text(encoding="utf-8")
         assert "Daemon started" in content
+
+    def test_log_file_contains_no_markup_brackets(self, pid_file, tmp_path):
+        """Rich markup tags must not appear literally in the log file."""
+        log = tmp_path / "daemon.log"
+
+        with (
+            patch("vardrrunner.commands.daemon.threading.Event", _fake_event_factory(1)),
+            patch("vardrrunner.commands.daemon.threading.Thread"),
+            patch("vardrrunner.commands.daemon.signal.signal"),
+            patch(
+                "vardrrunner.commands.daemon.config.require_auth",
+                return_value=("http://api", "key"),
+            ),
+            patch("vardrrunner.commands.daemon.api.VardrMapClient"),
+            patch("vardrrunner.commands.daemon.execute_pending_jobs", return_value=0),
+            patch("vardrrunner.commands.daemon.send_heartbeat"),
+        ):
+            daemon_mod.start(detach=False, poll_interval=1, heartbeat_interval=60, log_file=log)
+
+        content = log.read_text(encoding="utf-8")
+        assert "[green]" not in content
+        assert "[dim]" not in content
+
+    def test_rotating_log_file_isatty_returns_false(self, tmp_path):
+        log = tmp_path / "daemon.log"
+        f = daemon_mod._RotatingLogFile(log)
+        assert f.isatty() is False
+        f.close()
 
 
 # ---------------------------------------------------------------------------

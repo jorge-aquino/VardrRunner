@@ -124,6 +124,8 @@ Options for `pipeline run`:
 - `--severity high,critical` — nuclei severity filter for the scan stage
 - `--yes` / `-y` — skip the confirmation prompt
 - `--continue-on-error` — keep going if a stage fails (default: stop)
+- `--dry-run` — resolve first-stage targets and print the plan without executing any tool
+- `--json` — emit a machine-readable JSON result (run ID, per-stage status/targets/elapsed)
 
 The pipeline preflights that every tool in the chain is installed, and stops early if a
 stage produces no targets (e.g. no subdomains discovered).

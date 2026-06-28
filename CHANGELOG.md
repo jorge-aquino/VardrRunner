@@ -7,6 +7,21 @@ Per-version detail notes live in [`changelog/`](changelog/).
 
 ## [Unreleased]
 
+## [0.24.0] — 2026-06-26
+
+### Added
+- **`pipeline run --dry-run`.**  Resolves first-stage targets and prints the planned tool chain without executing any tool. Useful for validating scope and target counts before committing to a long pipeline run.
+- **`pipeline run --json`.**  Emits a machine-readable JSON result after the pipeline completes — run ID, per-stage status/targets/summary/elapsed, and an overall `success` flag. Designed for CI scripts that need to inspect pipeline results programmatically.
+
+### Fixed
+- **Daemon log files no longer contain Rich markup brackets.** The file-mode `Console` was created with `markup=False`, which caused `[green]`, `[dim]`, and similar tags to appear literally in log files. Removing that flag lets Rich render markup to plain text automatically since the log file is not a terminal. `_RotatingLogFile` now also implements `isatty() → False` explicitly.
+- **Daemon poll backs off exponentially on consecutive errors.** A downed backend was previously retried every `poll_interval` seconds regardless of failure count. The daemon now backs off exponentially (5 s → 10 s → 20 s … capped at 5 min) and resets on the next successful poll. The error message now includes the retry delay.
+- **`_extract_jsonl_field` OSError now logged as a warning** instead of silently swallowed. Disk-full or permissions failures are now visible in log aggregation.
+- **Collapsed redundant exception handlers in `_run_stage`.** `ToolTimeout` is a subclass of `Exception`; both handlers returned the same result shape, so the separate branch was dead code.
+
+### Changed
+- **Subfinder and Dnsx `execute()` use a shared `_write_host_import_jsonl()` helper.** Both handlers duplicated the same JSONL conversion loop. Extracted to a module-level helper in `handlers.py`.
+
 ## [0.23.0] — 2026-06-23
 
 ### Added

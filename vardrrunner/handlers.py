@@ -11,6 +11,7 @@ Adding a tool is a one-file change: write a handler and register it below.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -39,9 +40,16 @@ def _extract_jsonl_field(output: Path, *fields: str) -> list[str]:
                 if val:
                     targets.append(val)
                     break
-    except OSError:
-        pass
+    except OSError as e:
+        logging.warning("Failed to read tool output %s: %s", output, e)
     return targets
+
+
+def _write_host_import_jsonl(hosts: list[str], source: str, path: Path) -> None:
+    """Write a list of hostnames to a JSONL file in httpx-import format."""
+    with path.open("w") as fh:
+        for host in hosts:
+            fh.write(json.dumps({"host": host, "source": source}) + "\n")
 
 
 C = TypeVar("C")
@@ -259,9 +267,7 @@ class SubfinderHandler(ToolHandler[configs.SubfinderConfig]):
             return None
         # Convert discovered hosts into httpx-compatible JSONL for the import endpoint.
         jsonl_path = run_dir / "subfinder_httpx.jsonl"
-        with jsonl_path.open("w") as fh:
-            for host in hosts:
-                fh.write(json.dumps({"host": host, "source": "subfinder"}) + "\n")
+        _write_host_import_jsonl(hosts, "subfinder", jsonl_path)
         return jsonl_path
 
     def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:
@@ -306,9 +312,7 @@ class DnsxHandler(ToolHandler[configs.DnsxConfig]):
             return None
         # Resolvable hosts become recon targets (httpx-compatible JSONL).
         jsonl_path = run_dir / "dnsx_httpx.jsonl"
-        with jsonl_path.open("w") as fh:
-            for host in hosts:
-                fh.write(json.dumps({"host": host, "source": "dnsx"}) + "\n")
+        _write_host_import_jsonl(hosts, "dnsx", jsonl_path)
         return jsonl_path
 
     def upload(self, client: api.VardrMapClient, program_id: str, output: Path) -> str:

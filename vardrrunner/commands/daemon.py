@@ -84,6 +84,9 @@ class _RotatingLogFile:
             self._logger.info(self._buf)
             self._buf = ""
 
+    def isatty(self) -> bool:
+        return False
+
     def close(self) -> None:
         self.flush()
         self._handler.close()
@@ -175,7 +178,7 @@ def start(
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         _log = _RotatingLogFile(log_file)
-        out = Console(file=_log, highlight=False, markup=False)  # type: ignore[arg-type]
+        out = Console(file=_log, highlight=False)  # type: ignore[arg-type]
 
     pid = os.getpid()
     PID_FILE.write_text(str(pid))
@@ -209,6 +212,7 @@ def start(
     hb_thread = threading.Thread(target=_hb_loop, daemon=True, name="vardrrunner-heartbeat")
     hb_thread.start()
 
+    _error_streak = 0
     try:
         while not _shutdown_requested():
             try:
@@ -217,9 +221,16 @@ def start(
                 count = execute_pending_jobs(client, out)
                 if count:
                     out.print(f"[dim]Cycle complete — {count} job(s) executed.[/dim]")
+                _error_streak = 0
             except Exception as e:
-                # Transient API/network errors must never kill the loop
-                out.print(f"[red]Poll error:[/red] {e}")
+                # Transient API/network errors must never kill the loop; back off
+                # exponentially (5s → 10s → 20s … capped at 5 min) so a downed
+                # backend is polled politely instead of hammered every 5 seconds.
+                _error_streak += 1
+                backoff = min(poll_interval * (2 ** (_error_streak - 1)), 300)
+                out.print(f"[red]Poll error:[/red] {e}  (retry in {backoff}s)")
+                _stop.wait(timeout=backoff)
+                continue
             _stop.wait(timeout=poll_interval)
     finally:
         _stop.set()  # release the heartbeat thread promptly
